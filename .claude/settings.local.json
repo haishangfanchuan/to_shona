@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(python -c \"from PIL import Image; img=Image.open\\('src/assets/images/player/player.png'\\); print\\(f'width: {img.width}, height: {img.height}'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "Bash(npm ls *)",
+      "Bash(file public/assets/images/scene_2/bg_city.png)",
+      "Bash(python -c \"from PIL import Image; img=Image.open\\('public/assets/images/scene_2/bg_city.png'\\); print\\(f'{img.width}x{img.height}'\\)\")",
+      "Bash(python3 *)",
+      "Bash(cat vite.config.ts)",
+      "Bash(cat vite.config.js)",
+      "Bash(npm run *)",
+      "Bash(file \"public/assets/images/emotes..png\")",
+      "Bash(python3 -c \"from PIL import Image; img=Image.open\\('public/assets/images/emotes..png'\\); print\\(img.size\\)\")",
+      "Bash(identify \"E:/project/to_shona_v2/public/assets/images/npc.png\")"
+    ]
+  }
+}

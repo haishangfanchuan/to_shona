@@ -1,0 +1,301 @@
+import * as Phaser from 'phaser';
+import { CONSTANTS } from '../config/constants';
+import { MEMORIES } from '../config/memories';
+import type { MemoryConfig } from '../config/memories';
+import { Player } from '../components/Player';
+import { NPC } from '../components/NPC';
+import { VirtualJoystick } from '../components/VirtualJoystick';
+import { TemperatureBar } from '../components/TemperatureBar';
+import { PaceSyncSystem } from '../components/PaceSyncSystem';
+import { VignetteEffect } from '../components/VignetteEffect';
+import { SnowEffect } from '../components/SnowEffect';
+import { playPop } from '../components/SoundGenerators';
+import { IdleChatBubble } from '../components/IdleChatBubble';
+import { EmoteBubble } from '../components/EmoteBubble';
+
+export class StreetScene extends Phaser.Scene {
+    private player!: Player;
+    private npc!: NPC;
+    private joystick!: VirtualJoystick;
+    private tempBar!: TemperatureBar;
+    private paceSync!: PaceSyncSystem;
+    private vignette!: VignetteEffect;
+    private snow!: SnowEffect;
+    private idleChat!: IdleChatBubble;
+    private emoteBubble!: EmoteBubble;
+    private isFrozen = false;
+
+    private triggeredMemories = new Set<string>();
+    private memoryPopupActive = false;
+    private sceneEnding = false;
+
+    private isSomeoneWaiting = false;
+
+    constructor() {
+        super({ key: 'StreetScene' });
+    }
+
+    create() {
+        this.physics.world.setBounds(0, 0, CONSTANTS.SCENE_LENGTH.STREET + CONSTANTS.SCREEN_WIDTH, CONSTANTS.SCREEN_HEIGHT);
+
+        // 1. Background
+        this.add.image(0, 0, 'bg_street').setOrigin(0, 0);
+
+        // 2. NPC (ahead) then Player (behind)
+        this.npc = new NPC(this, 110, 610);
+        this.player = new Player(this, 100, 615);
+
+        // 4. Camera
+        this.cameras.main.setBounds(0, 0, CONSTANTS.SCENE_LENGTH.STREET, CONSTANTS.SCREEN_HEIGHT);
+        this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0);
+
+        // 5. Vignette overlay
+        this.vignette = new VignetteEffect(this);
+
+        // 5.5 Snow effect (starts when temp hits 0)
+        this.snow = new SnowEffect(this);
+
+        // 5.6 Idle chat bubble
+        this.idleChat = new IdleChatBubble(this);
+
+        // 5.7 Emote bubble
+        this.emoteBubble = new EmoteBubble(this);
+
+        // 6. Temperature bar (fixed on screen)
+        this.tempBar = new TemperatureBar(this, (CONSTANTS.SCREEN_WIDTH - 160) / 2, 20);
+        this.tempBar.setScrollFactor(0, 0);
+
+        // 7. Pace sync system
+        this.paceSync = new PaceSyncSystem(this.npc, this.tempBar, this.vignette);
+
+        // 8. Virtual joystick
+        this.joystick = new VirtualJoystick(this);
+        this.player.bindJoystick(this.joystick);
+
+        // 11. BGM
+        const bgm = this.sound.add('bgm_street', { loop: true, volume: 0.6 });
+        bgm.play();
+
+        // Fade in
+        this.cameras.main.fadeIn(500, 0, 0, 0);
+    }
+
+    update() {
+        if (this.sceneEnding || this.memoryPopupActive) return;
+
+        // 1. Player input
+        this.player.update();
+
+        // 2. NPC step sound (distance-based)
+        this.npc.playStepSound(this.player.getX());
+
+        // 2.1 NPC waits if off-screen right
+        this.handleNpcOffscreen();
+
+        // 2.5 NPC auto-walk (already set in constructor velocity)
+
+        // 3. Waiting at memory trigger points
+        this.handleWaiting();
+
+        // 4. Pace sync (skip when someone is waiting or NPC off-screen)
+        if (!this.isSomeoneWaiting && !this.npcWaitingOffscreen) {
+            this.paceSync.update(this.player.getX(), this.npc.getX());
+        }
+
+        // 4.5 Idle chat when close
+        this.idleChat.update(this.player.getX(), this.npc.getX(), this.player.sprite, this.npc.sprite, this.emoteBubble.isActive, this.isSomeoneWaiting);
+
+        // 4.6 Random emote bubble (skip if chat is showing)
+        if (!this.idleChat.isActive) {
+            this.emoteBubble.update(this.player.sprite, this.npc.sprite);
+        }
+
+        // 5. Memory trigger check
+        if (!this.memoryPopupActive) {
+            this.checkMemoryTriggers();
+        }
+
+        // 6. Snow update + freeze check
+        this.snow.update();
+        if (!this.isFrozen && this.tempBar.getValue() <= 0) {
+            this.isFrozen = true;
+            this.tempBar.freeze();
+            this.snow.start();
+        }
+        if (this.isFrozen && this.tempBar.getValue() >= CONSTANTS.TEMPERATURE.MAX / 3) {
+            this.isFrozen = false;
+            this.tempBar.unfreeze();
+            this.snow.stop();
+        }
+
+        // 7. Scene end check
+        if (this.player.getX() >= CONSTANTS.SCENE_LENGTH.STREET) {
+            this.triggerSceneTransition();
+        }
+    }
+
+    private npcWaitingOffscreen = false;
+
+    private handleNpcOffscreen() {
+        if (this.sceneEnding || this.memoryPopupActive || this.isSomeoneWaiting) return;
+
+        const camRight = this.cameras.main.scrollX + CONSTANTS.SCREEN_WIDTH;
+        const npcX = this.npc.getX();
+
+        if (npcX > camRight) {
+            // NPC off-screen right — stop and wait
+            this.npc.stopWalkLowHead();
+            this.npcWaitingOffscreen = true;
+        } else if (this.npcWaitingOffscreen && npcX <= camRight - 60) {
+            // Player caught up — resume
+            this.npc.resumeWalk();
+            this.npcWaitingOffscreen = false;
+        }
+    }
+
+    private handleWaiting() {
+        if (this.memoryPopupActive) return;
+
+        const playerX = this.player.getX();
+        const npcX = this.npc.getX();
+
+        const offset = playerX - npcX;
+        const inSyncRange = offset >= -40 && offset <= 60;
+
+        this.isSomeoneWaiting = false;
+        for (const mem of MEMORIES) {
+            if (this.triggeredMemories.has(mem.id)) continue;
+
+            const playerClose = Math.abs(playerX - mem.triggerX) < 60;
+            const npcClose = Math.abs(npcX - mem.triggerX) < 60;
+
+            if (playerClose && !npcClose && !inSyncRange) {
+                this.isSomeoneWaiting = true;
+                const vx = (this.player.sprite.body as Phaser.Physics.Arcade.Body).velocity.x;
+                if (vx > CONSTANTS.SPEED.NPC_WALK) {
+                    this.player.sprite.setVelocityX(CONSTANTS.SPEED.NPC_WALK);
+                } else if (vx < -CONSTANTS.SPEED.NPC_WALK) {
+                    this.player.sprite.setVelocityX(-CONSTANTS.SPEED.NPC_WALK);
+                }
+                this.tempBar.decreaseFast();
+                return;
+            } else if (npcClose && !playerClose && !inSyncRange) {
+                this.isSomeoneWaiting = true;
+                this.npc.stopWalkLowHead();
+                this.tempBar.decreaseFast();
+                return;
+            }
+        }
+
+        if (!this.npcWaitingOffscreen) {
+            this.npc.resumeWalk();
+        }
+    }
+
+    private checkMemoryTriggers() {
+        const playerX = this.player.getX();
+        const npcX = this.npc.getX();
+
+        for (const mem of MEMORIES) {
+            if (this.triggeredMemories.has(mem.id)) continue;
+
+            const playerClose = Math.abs(playerX - mem.triggerX) < 40;
+            const npcClose = Math.abs(npcX - mem.triggerX) < 40;
+
+            if (playerClose && npcClose) {
+                this.triggeredMemories.add(mem.id);
+                this.showMemoryPopup(mem);
+                break;
+            }
+        }
+    }
+
+    private showMemoryPopup(mem: MemoryConfig) {
+        this.memoryPopupActive = true;
+        this.physics.pause();
+        this.joystick.disable();
+        this.player.sprite.anims.pause();
+        this.npc.sprite.anims.pause();
+
+        // Pop sound
+        playPop();
+
+        // After a short delay, show the memory overlay
+        this.time.delayedCall(600, () => {
+
+            // Semi-transparent overlay
+            const overlay = this.add.rectangle(
+                CONSTANTS.SCREEN_WIDTH / 2, CONSTANTS.SCREEN_HEIGHT / 2,
+                CONSTANTS.SCREEN_WIDTH, CONSTANTS.SCREEN_HEIGHT,
+                0x000000, 0.7
+            ).setScrollFactor(0).setDepth(200);
+
+            // Memory text
+            const text = this.add.text(
+                CONSTANTS.SCREEN_WIDTH / 2, CONSTANTS.SCREEN_HEIGHT / 2 - 60,
+                mem.text, {
+                    fontSize: '18px',
+                    color: '#FFB088',
+                    fontFamily: 'serif',
+                    align: 'center',
+                    wordWrap: { width: CONSTANTS.SCREEN_WIDTH - 40, useAdvancedWrap: true }
+                }
+            ).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+
+            // "Click to continue" hint
+            const hint = this.add.text(
+                CONSTANTS.SCREEN_WIDTH / 2, CONSTANTS.SCREEN_HEIGHT / 2 + 80,
+                '[ 点击继续 ]', {
+                    fontSize: '16px',
+                    color: '#888888',
+                    fontFamily: 'serif'
+                }
+            ).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+
+            this.tweens.add({
+                targets: hint,
+                alpha: 0.4,
+                duration: 800,
+                yoyo: true,
+                repeat: -1
+            });
+
+            // Temperature bonus
+            this.tempBar.addBonus(CONSTANTS.TEMPERATURE.MEMORY_BONUS);
+
+            // Click to dismiss
+            this.input.once('pointerdown', () => {
+                overlay.destroy();
+                text.destroy();
+                hint.destroy();
+                this.memoryPopupActive = false;
+                this.physics.resume();
+                this.joystick.enable();
+                this.player.bindJoystick(this.joystick);
+                this.player.sprite.anims.resume();
+                this.npc.sprite.anims.resume();
+            });
+        });
+    }
+
+    private triggerSceneTransition() {
+        if (this.sceneEnding) return;
+        this.sceneEnding = true;
+
+        // Disable input
+        this.player.disableInput();
+        this.joystick.disable();
+
+        // Both walk off-screen at NPC speed
+        this.npc.forceAutoWalk();
+
+        // Fade out
+        this.cameras.main.fadeOut(500, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.scene.start('CityNightScene', {
+                currentTemp: this.tempBar.getValue(),
+                distanceOffset: this.player.getX() - this.npc.getX()
+            });
+        });
+    }
+}
