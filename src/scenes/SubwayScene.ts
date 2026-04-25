@@ -19,6 +19,8 @@ export class SubwayScene extends Phaser.Scene {
     private emoteTimer?: Phaser.Time.TimerEvent;
     private lineIndex = 0;
     private floatingTexts: Phaser.GameObjects.Text[] = [];
+    private floatingTextTargets: Map<Phaser.GameObjects.Text, number> = new Map();
+    private isTextAnimating = false;
     private hint!: Phaser.GameObjects.Text;
     private choicesVisible = false;
 
@@ -39,6 +41,8 @@ export class SubwayScene extends Phaser.Scene {
         this.currentTemp = data.currentTemp ?? 25;
         this.lineIndex = 0;
         this.floatingTexts = [];
+        this.floatingTextTargets = new Map();
+        this.isTextAnimating = false;
         this.choicesVisible = false;
         this.snowStarted = false;
 
@@ -248,6 +252,9 @@ export class SubwayScene extends Phaser.Scene {
     private onPointerDown() {
         if (this.lineIndex >= DIALOGUES.SUBWAY_APOLOGY.length) return;
         if (this.choicesVisible) return;
+        if (this.isTextAnimating) return;
+
+        this.isTextAnimating = true;
 
         // Stop emote bubbles once player starts talking
         this.emoteStopped = true;
@@ -282,7 +289,9 @@ export class SubwayScene extends Phaser.Scene {
 
         // Shift existing texts up by one line; fade out those leaving the area
         for (const old of this.floatingTexts) {
-            const newY = old.y - LINE_HEIGHT;
+            const currentTarget = this.floatingTextTargets.get(old) ?? old.y;
+            const newY = currentTarget - LINE_HEIGHT;
+            this.floatingTextTargets.set(old, newY);
             if (newY < 40) {
                 this.tweens.add({
                     targets: old,
@@ -293,6 +302,7 @@ export class SubwayScene extends Phaser.Scene {
                     onComplete: () => {
                         const idx = this.floatingTexts.indexOf(old);
                         if (idx !== -1) this.floatingTexts.splice(idx, 1);
+                        this.floatingTextTargets.delete(old);
                         old.destroy();
                     }
                 });
@@ -307,13 +317,17 @@ export class SubwayScene extends Phaser.Scene {
         }
 
         // Float the new text up to the bottom of the text area
+        this.floatingTextTargets.set(textObj, TEXT_AREA_BOTTOM);
         this.tweens.add({
             targets: textObj,
             x: targetX,
             y: TEXT_AREA_BOTTOM,
             alpha: 1,
             duration: 1500,
-            ease: 'Sine.easeOut'
+            ease: 'Sine.easeOut',
+            onComplete: () => {
+                this.isTextAnimating = false;
+            }
         });
 
         playWhisper();
