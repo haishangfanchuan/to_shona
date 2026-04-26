@@ -12,7 +12,7 @@ export const CONSTANTS = {
     DISTANCE: {
         INIT: 100,
         SYNC_TARGET: 40,
-        TOO_FAR: -100,
+        TOO_FAR: -80,
         TOO_FAST: 60
     },
     TEMPERATURE: {
