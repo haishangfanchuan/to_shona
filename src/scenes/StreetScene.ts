@@ -73,8 +73,8 @@ export class StreetScene extends Phaser.Scene {
         this.player.bindJoystick(this.joystick);
 
         // 11. BGM
-        const bgm = this.sound.add('bgm_street', { loop: true, volume: 0.6 });
-        bgm.play();
+        // const bgm = this.sound.add('bgm_street', { loop: true, volume: 0.6 });
+        // bgm.play();
 
         // Fade in
         this.cameras.main.fadeIn(500, 0, 0, 0);

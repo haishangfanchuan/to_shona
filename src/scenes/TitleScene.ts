@@ -125,6 +125,9 @@ export class TitleScene extends Phaser.Scene {
                 this.scene.start('StreetScene');
             });
         });
+
+        const bgm = this.sound.add('bgm_street', { loop: true, volume: 0.6 });
+        bgm.play();
     }
 
     update() {

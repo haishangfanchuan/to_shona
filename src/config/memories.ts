@@ -8,11 +8,11 @@ export const MEMORIES: MemoryConfig[] = [
     {
         id: "glasses_store",
         triggerX: 665,
-        text: "这是我们相遇的地方。人生若只如初见，可是..."
+        text: "故事的起点，藏着最初的心动。"
     },
     {
         id: "snack_shop",
         triggerX: 986,
-        text: "那一次你并没有买到你爱吃的零食..."
+        text: "没有买到的零食...小小的遗憾，却是最珍贵的回忆。"
     }
 ];
