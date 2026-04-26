@@ -3,6 +3,7 @@ import { CONSTANTS } from '../config/constants';
 import { DIALOGUES } from '../config/dialogues';
 import { VignetteEffect } from '../components/VignetteEffect';
 import { SnowEffect } from '../components/SnowEffect';
+import { EndingTextures } from '../utils/EndingTextures';
 import { StepSoundGenerator } from '../components/StepSoundGenerator';
 import { EmoteBubble } from '../components/EmoteBubble';
 
@@ -46,6 +47,9 @@ export class SubwayScene extends Phaser.Scene {
         this.snowStarted = false;
         this.userScrolled = false;
         this.scrollActive = false;
+
+        // Preload EndingScene textures in background (shared TextureManager)
+        EndingTextures.preloadAll(this);
 
         // 1. Static subway background (1085×1808)
         const subScale = CONSTANTS.SCREEN_WIDTH / 1085;
