@@ -10,97 +10,70 @@ interface EnvelopeConfig {
     onComplete?: () => void;
 }
 
-/**
- * Phaser Graphics implementation that replicates：
- *  - CSS-style envelope with back, front (triangle flap), top flap
- *  - Click to open: flap rotates open (simulated via Graphics redraw)
- *  - Paper flies out in a curl arc (3-phase WAAPI-like tween)
- *  - Envelope fades behind the paper
- *  - Paper expands fullscreen, then typewriter text appears
- *  - Optional redeem button + ticket
- */
 export class EnvelopeLetter {
     private scene: Phaser.Scene;
     private config: EnvelopeConfig;
 
-    // Envelope dimensions (matches demo: 300×200)
     private envW = 300;
     private envH = 200;
+    private paperW = 340;
+    private paperH = 480;
 
-    // Top-level containers
     private sceneContainer!: Phaser.GameObjects.Container;
     private envelopeContainer!: Phaser.GameObjects.Container;
-    private letterContainer!: Phaser.GameObjects.Container;
 
-    // Envelope layers
     private envBack!: Phaser.GameObjects.Graphics;
     private envFront!: Phaser.GameObjects.Graphics;
     private envFlap!: Phaser.GameObjects.Graphics;
 
-    // Paper
-    private paperGfx!: Phaser.GameObjects.Graphics;
-    private paperText!: Phaser.GameObjects.Text;
+    // DOM-based paper
+    private paperEl!: HTMLDivElement;
+    private scrollContainerEl!: HTMLDivElement;
+    private textEl!: HTMLDivElement;
+    private redeemBtnEl!: HTMLDivElement | null;
+    private paperVisible = false;
 
-    // State
     private clicked = false;
     private dustEvent?: Phaser.Time.TimerEvent;
 
     constructor(scene: Phaser.Scene, config: EnvelopeConfig) {
         this.scene = scene;
         this.config = config;
+        this.redeemBtnEl = null;
     }
 
     show(x: number, y: number) {
-        // Root container at the position passed by the caller
         this.sceneContainer = this.scene.add.container(x, y)
             .setDepth(200);
 
-        // ── Envelope back ──
+        // Envelope back
         this.envBack = this.scene.add.graphics().setDepth(1);
         this.drawEnvBack(this.envBack);
 
-        // ── Paper (hidden initially inside envelope) ──
-        const paperW = 280;
-        const paperH = 180;
-        this.paperGfx = this.scene.add.graphics().setDepth(2);
-        this.drawPaper(this.paperGfx, paperW, paperH);
-
-        this.paperText = this.scene.add.text(-paperW / 2 + 40, -paperH / 2 + 30, '', {
-            fontSize: '18px',
-            color: '#333333',
-            fontFamily: 'Georgia, serif',
-            lineSpacing: 14,
-            wordWrap: { width: paperW - 80 },
-        }).setDepth(3).setAlpha(0);
-
-        this.letterContainer = this.scene.add.container(0, 0, [this.paperGfx, this.paperText])
-            .setDepth(2);
-
-        // ── Envelope front (triangle flap) ──
+        // Envelope front
         this.envFront = this.scene.add.graphics().setDepth(3);
         this.drawEnvFront(this.envFront);
 
-        // ── Envelope top flap ──
+        // Envelope top flap
         this.envFlap = this.scene.add.graphics().setDepth(4);
         this.drawEnvFlapClosed(this.envFlap);
 
-        // Envelope container holds everything
         this.envelopeContainer = this.scene.add.container(0, 0, [
-            this.envBack,
-            this.letterContainer,
-            this.envFront,
-            this.envFlap,
+            this.envBack, this.envFront, this.envFlap,
         ]).setDepth(1);
 
         this.sceneContainer.add(this.envelopeContainer);
 
-        // ── Red heart seal button on the flap ──
+        // Create DOM paper (hidden initially)
+        this.createDomPaper();
+
+        // Heart seal
         this.createHeartSeal();
 
-        // Spawn ambient dust
+        // Dust
         this.spawnDust();
 
-        // Entrance animation: fade in + scale up
+        // Entrance animation
         this.sceneContainer.setAlpha(0).setScale(0.5);
         this.scene.tweens.add({
             targets: this.sceneContainer,
@@ -108,21 +81,129 @@ export class EnvelopeLetter {
             duration: 1200,
             ease: 'Back.easeOut',
         });
-
     }
 
     destroy() {
         if (this.dustEvent) this.dustEvent.remove();
+        if (this.paperEl) this.paperEl.remove();
+        if (this.scrollContainerEl) this.scrollContainerEl.remove();
+        if (this.redeemBtnEl) this.redeemBtnEl.remove();
         if (this.sceneContainer) this.sceneContainer.destroy();
     }
 
     // ════════════════════════════════════════════
-    //  Drawing helpers (CSS border-triangle style)
+    //  DOM Paper
     // ════════════════════════════════════════════
 
-    /**
-     * env-back: #d9d9d9 rounded rect (the back panel)
-     */
+    private createDomPaper() {
+        const W = this.scene.cameras.main.width;
+        const H = this.scene.cameras.main.height;
+        const canvas = this.scene.game.canvas;
+        const canvasRect = canvas.getBoundingClientRect();
+        const scaleX = canvasRect.width / W;
+        const scaleY = canvasRect.height / H;
+
+        // Responsive paper size for mobile
+        const isMobile = Math.min(W, H) < 500;
+        const paperScale = isMobile ? 0.95 : 0.9;
+        const maxPaperWidth = isMobile ? Math.min(W * 0.9, 400) : this.paperW;
+        const maxPaperHeight = isMobile ? Math.min(H * 0.75, 600) : this.paperH;
+
+        const pw = Math.min(this.paperW * paperScale, maxPaperWidth);
+        const ph = Math.min(this.paperH * paperScale, maxPaperHeight);
+        const px = (W - pw) / 2;
+        const py = (H - ph) / 2;
+
+        const pxScreen = px * scaleX;
+        const pyScreen = py * scaleY;
+        const pwScreen = pw * scaleX;
+        const phScreen = ph * scaleY;
+        const paddingX = (isMobile ? 16 : 24) * scaleX;
+        const paddingY = (isMobile ? 14 : 18) * scaleY;
+
+        this.paperEl = document.createElement('div');
+        this.paperEl.style.cssText = `
+            position:absolute;
+            pointer-events:none;
+            z-index:100;
+            left:${canvasRect.left + pxScreen}px;
+            top:${canvasRect.top + pyScreen}px;
+            width:${pwScreen}px;
+            height:${phScreen}px;
+            background:#faf7f0;
+            border-radius:12px;
+            box-shadow:0 2px 12px rgba(0,0,0,0.15);
+            padding:${paddingY}px ${paddingX}px;
+            box-sizing:border-box;
+            opacity:0;
+            transition:opacity 0.8s ease;
+        `;
+
+        this.scrollContainerEl = document.createElement('div');
+        this.scrollContainerEl.style.cssText = `
+            width:100%;
+            height:100%;
+            overflow-y:auto;
+            overflow-x:hidden;
+            padding-right:${8 * scaleX}px;
+            margin-right:${-8 * scaleX}px;
+            box-sizing:content-box;
+        `;
+        this.scrollContainerEl.className = 'envelope-scroll';
+
+        this.textEl = document.createElement('div');
+        const fontSize = isMobile ? 13 : 14;
+        this.textEl.style.cssText = `
+            font-size:${fontSize * scaleY}px;
+            color:#333;
+            font-family:Georgia,serif;
+            line-height:1.8;
+            white-space:pre-wrap;
+            word-wrap:break-word;
+            -webkit-text-size-adjust:100%;
+            text-size-adjust:100%;
+        `;
+
+        this.scrollContainerEl.appendChild(this.textEl);
+        this.paperEl.appendChild(this.scrollContainerEl);
+        document.body.appendChild(this.paperEl);
+
+        this.addScrollbarStyle();
+    }
+
+    private addScrollbarStyle() {
+        const styleId = 'envelope-scrollbar-style';
+        if (document.getElementById(styleId)) return;
+
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            .envelope-scroll {
+                -webkit-overflow-scrolling: touch;
+                scroll-behavior: smooth;
+            }
+            .envelope-scroll::-webkit-scrollbar {
+                width: 6px;
+            }
+            .envelope-scroll::-webkit-scrollbar-track {
+                background: rgba(0,0,0,0.05);
+                border-radius: 3px;
+            }
+            .envelope-scroll::-webkit-scrollbar-thumb {
+                background: rgba(196,154,96,0.5);
+                border-radius: 3px;
+            }
+            .envelope-scroll::-webkit-scrollbar-thumb:hover {
+                background: rgba(196,154,96,0.7);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // ════════════════════════════════════════════
+    //  Drawing helpers
+    // ════════════════════════════════════════════
+
     private drawEnvBack(g: Phaser.GameObjects.Graphics) {
         const w = this.envW;
         const h = this.envH;
@@ -131,87 +212,36 @@ export class EnvelopeLetter {
         g.fillRoundedRect(-w / 2, -h / 2, w, h, 4);
     }
 
-    /**
-     * env-front: bottom triangle (the front flap)
-     * CSS: border-left: 150px solid #e2e2e2; border-right: 150px solid #e2e2e2;
-     *      border-bottom: 110px solid #ececec; border-top: 90px solid transparent;
-     */
     private drawEnvFront(g: Phaser.GameObjects.Graphics) {
         const w = this.envW;
         const h = this.envH;
         g.clear();
-
-        // CSS border-trick: border-left 150px #e2e2e2 = left triangle pointing right
         g.fillStyle(0xe2e2e2, 1);
         g.fillTriangle(-w / 2, -h / 2, -w / 2, h / 2, 0, 0);
-
-        // border-right 150px #e2e2e2 = right triangle pointing left
         g.fillStyle(0xe2e2e2, 1);
         g.fillTriangle(w / 2, -h / 2, w / 2, h / 2, 0, 0);
-
-        // border-bottom 110px #ececec = bottom triangle pointing up
         g.fillStyle(0xececec, 1);
         g.fillTriangle(-w / 2, h / 2, w / 2, h / 2, 0, h / 2 - 110);
     }
 
-    /**
-     * env-flap (closed): top triangle pointing down
-     * CSS: border-left: 150px solid transparent; border-right: 150px solid transparent;
-     *      border-top: 120px solid #cccccc;
-     * Creates a downward-pointing triangle at top.
-     */
     private drawEnvFlapClosed(g: Phaser.GameObjects.Graphics) {
         const w = this.envW;
         const h = this.envH;
         g.clear();
-
         g.fillStyle(0xcccccc, 1);
-        g.fillTriangle(
-            -w / 2, -h / 2,
-            w / 2, -h / 2,
-            0, -h / 2 + 120
-        );
+        g.fillTriangle(-w / 2, -h / 2, w / 2, -h / 2, 0, -h / 2 + 120);
     }
 
-    /**
-     * env-flap (open): rotated up (simulated by drawing upward-pointing triangle)
-     * CSS: rotateX(180deg) flips the flap upward
-     */
     private drawEnvFlapOpen(g: Phaser.GameObjects.Graphics) {
         const w = this.envW;
         const h = this.envH;
         g.clear();
-
-        // Flap opens upward: triangle now points up from top edge
         g.fillStyle(0xcccccc, 1);
-        g.fillTriangle(
-            -w / 2, -h / 2,
-            w / 2, -h / 2,
-            0, -h / 2 - 120
-        );
-    }
-
-    /**
-     * Paper: gradient-style white-to-cream with shadow
-     * CSS: background: linear-gradient(135deg, #ffffff 0%, #f4f1ea 100%)
-     *      border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.1)
-     */
-    private drawPaper(g: Phaser.GameObjects.Graphics, paperW: number, paperH: number) {
-        g.clear();
-
-        // Shadow
-        g.fillStyle(0x000000, 0.1);
-        g.fillRoundedRect(-paperW / 2 + 1, -paperH / 2 + 2, paperW, paperH, 2);
-
-        // Main paper body — gradient simulated with two overlapping rects
-        g.fillStyle(0xf4f1ea, 1);
-        g.fillRoundedRect(-paperW / 2, -paperH / 2, paperW, paperH, 2);
-        g.fillStyle(0xffffff, 0.7);
-        g.fillRoundedRect(-paperW / 2, -paperH / 2, paperW * 0.7, paperH, 2);
+        g.fillTriangle(-w / 2, -h / 2, w / 2, -h / 2, 0, -h / 2 - 120);
     }
 
     // ════════════════════════════════════════════
-    //  Heart seal button on envelope flap
+    //  Heart seal
     // ════════════════════════════════════════════
 
     private createHeartSeal() {
@@ -223,12 +253,10 @@ export class EnvelopeLetter {
         this.drawHeart(heartGfx, s);
         heartGfx.setPosition(cx, cy);
 
-        // Use a Zone for reliable hit testing — large enough to tap easily
         const hitSize = s * 3;
         const hitZone = this.scene.add.zone(cx, cy, hitSize, hitSize)
             .setDepth(211).setInteractive({ useHandCursor: true });
 
-        // Pulse animation on the gfx
         this.scene.tweens.add({
             targets: heartGfx,
             scaleX: 1.12, scaleY: 1.12,
@@ -254,12 +282,10 @@ export class EnvelopeLetter {
     }
 
     private drawHeart(g: Phaser.GameObjects.Graphics, s: number) {
-        // Shadow
         g.fillStyle(0x000000, 0.15);
         g.fillCircle(-s * 0.35 + 1, -s * 0.2 + 2, s * 0.52);
         g.fillCircle(s * 0.35 + 1, -s * 0.2 + 2, s * 0.52);
         g.fillTriangle(-s * 0.88 + 1, -s * 0.15 + 2, s * 0.88 + 1, -s * 0.15 + 2, 1, s * 0.82 + 2);
-        // Main heart — soft red
         g.fillStyle(0xd94f5c, 1);
         g.fillCircle(-s * 0.35, -s * 0.2, s * 0.5);
         g.fillCircle(s * 0.35, -s * 0.2, s * 0.5);
@@ -267,7 +293,7 @@ export class EnvelopeLetter {
     }
 
     // ════════════════════════════════════════════
-    //  Ambient dust particles
+    //  Ambient dust
     // ════════════════════════════════════════════
 
     private spawnDust() {
@@ -290,6 +316,7 @@ export class EnvelopeLetter {
             delay: 32,
             loop: true,
             callback: () => {
+                if (this.paperVisible) return;
                 dustGfx.clear();
                 for (const d of particles) {
                     d.phase += 0.02;
@@ -312,12 +339,11 @@ export class EnvelopeLetter {
     }
 
     // ════════════════════════════════════════════
-    //  Click → Open → Fly → Typewriter
+    //  Click → Open → Fade in paper → Typewriter
     // ════════════════════════════════════════════
 
     private onEnvelopeClick() {
-        // Phase 1: Open flap (simulate rotateX(180deg) by redrawing)
-        // We tween the flap container's alpha to 0, redraw as open, fade back in
+        // Open flap
         this.scene.tweens.add({
             targets: this.envFlap,
             alpha: 0,
@@ -331,8 +357,8 @@ export class EnvelopeLetter {
                     duration: 400,
                     ease: 'Quad.easeOut',
                     onComplete: () => {
-                        this.scene.time.delayedCall(400, () => {
-                            this.flyOutPaper();
+                        this.scene.time.delayedCall(300, () => {
+                            this.showPaper();
                         });
                     },
                 });
@@ -340,106 +366,56 @@ export class EnvelopeLetter {
         });
     }
 
-    private flyOutPaper() {
-        const W = this.scene.cameras.main.width;
-        const H = this.scene.cameras.main.height;
+    private showPaper() {
+        this.paperVisible = true;
 
-        // Paper starts at envelope center (0,0 within sceneContainer)
-        // Target: center of screen, scaled up to fill 80% viewport
-        const paperW = 280;
-        const paperH = 180;
-        const targetScale = Math.min((W * 0.8) / paperW, (H * 0.8) / paperH);
-
-        // Remove paper from envelope container to scene-level for free movement
-        this.envelopeContainer.remove(this.letterContainer);
-        this.letterContainer.setPosition(0, 0);
-        this.letterContainer.setDepth(5);
-        this.letterContainer.setAlpha(1);
-        this.sceneContainer.add(this.letterContainer);
-
-        // Phase 1: Paper rises out of envelope (ease-out, slight tilt)
+        // Fade out envelope
         this.scene.tweens.add({
-            targets: this.letterContainer,
-            y: -180,
-            angle: 5,
-            scaleX: 0.9,
-            scaleY: 0.9,
-            duration: 550,
-            ease: 'Cubic.easeOut',
+            targets: this.envelopeContainer,
+            alpha: 0,
+            duration: 800,
+            ease: 'Quad.easeOut',
             onComplete: () => {
-                // Phase 2: Arc flight — up-right with rotation and curl feel
-                this.scene.tweens.add({
-                    targets: this.letterContainer,
-                    x: 160,
-                    y: -350,
-                    angle: 25,
-                    scaleX: 1.1,
-                    scaleY: 1.1,
-                    duration: 850,
-                    ease: 'Sine.easeInOut',
-                    onComplete: () => {
-                        // Phase 3: Fly to center, flatten out
-                        this.scene.tweens.add({
-                            targets: this.letterContainer,
-                            x: 0,
-                            y: 0,
-                            angle: 0,
-                            scaleX: targetScale,
-                            scaleY: targetScale,
-                            duration: 900,
-                            ease: 'Cubic.easeInOut',
-                            onComplete: () => {
-                                this.startTypewriter(paperW, paperH);
-                            },
-                        });
-                    },
-                });
+                this.envelopeContainer.destroy();
             },
         });
 
-        // Envelope fades during flight (~1.2s after flight starts)
-        this.scene.time.delayedCall(1200, () => {
-            this.scene.tweens.add({
-                targets: this.envelopeContainer,
-                alpha: 0,
-                duration: 1500,
-                ease: 'Quad.easeOut',
-                onComplete: () => {
-                    this.envelopeContainer.destroy();
-                },
-            });
+        // Fade in DOM paper
+        this.paperEl.style.opacity = '1';
+        this.paperEl.style.pointerEvents = 'auto';
+
+        // Start typewriter after paper fades in
+        this.scene.time.delayedCall(800, () => {
+            this.startTypewriter();
         });
     }
 
     // ════════════════════════════════════════════
-    //  Typewriter effect
+    //  Typewriter (DOM-based)
     // ════════════════════════════════════════════
 
-    private startTypewriter(paperW: number, paperH: number) {
-        // Show text, fade in
-        this.paperText.setAlpha(1);
-
-        // Redraw paper at larger size with rounded corners for "fullscreen" look
-        // CSS: border-radius: 12px, box-shadow: 0 20px 50px rgba(0,0,0,0.4)
-        this.paperGfx.clear();
-        this.paperGfx.fillStyle(0x000000, 0.4);
-        this.paperGfx.fillRoundedRect(-paperW / 2 + 3, -paperH / 2 + 5, paperW, paperH, 12);
-        this.paperGfx.fillStyle(0xf4f1ea, 1);
-        this.paperGfx.fillRoundedRect(-paperW / 2, -paperH / 2, paperW, paperH, 12);
-        this.paperGfx.fillStyle(0xffffff, 0.6);
-        this.paperGfx.fillRoundedRect(-paperW / 2, -paperH / 2, paperW * 0.7, paperH, 12);
-
+    private startTypewriter() {
         const fullText = this.config.letterText;
         let charIdx = 0;
 
         const typewriter = this.scene.time.addEvent({
-            delay: 80,
+            delay: 50,
             callback: () => {
                 charIdx++;
-                this.paperText.setText(fullText.substring(0, charIdx));
+                this.textEl.textContent = fullText.substring(0, charIdx);
+
+                // Auto-scroll to bottom during typing
+                if (this.scrollContainerEl) {
+                    this.scrollContainerEl.scrollTop = this.scrollContainerEl.scrollHeight;
+                }
+
                 if (charIdx >= fullText.length) {
                     typewriter.remove();
-                    this.onTextComplete(paperW, paperH);
+                    // Scroll back to top when done
+                    if (this.scrollContainerEl) {
+                        this.scrollContainerEl.scrollTop = 0;
+                    }
+                    this.onTextComplete();
                 }
             },
             loop: true,
@@ -450,102 +426,90 @@ export class EnvelopeLetter {
     //  After text → Redeem button or complete
     // ════════════════════════════════════════════
 
-    private onTextComplete(paperW: number, paperH: number) {
+    private onTextComplete() {
         if (this.config.showRedeemButton) {
             this.scene.time.delayedCall(500, () => {
-                this.showRedeemButton(paperW, paperH);
+                this.showRedeemButton();
             });
         } else {
             this.config.onComplete?.();
         }
     }
 
-    private showRedeemButton(paperW: number, paperH: number) {
+    private showRedeemButton() {
+
+        const paperRect = this.paperEl.getBoundingClientRect();
         const btnW = 120;
         const btnH = 36;
-        const btnX = paperW / 2 - btnW / 2 - 10;
-        const btnY = paperH / 2 - btnH / 2 - 8;
 
-        const btnBg = this.scene.add.graphics();
-        btnBg.fillStyle(0xc49a60, 1);
-        btnBg.fillRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
-        btnBg.fillStyle(0xd4aa70, 0.4);
-        btnBg.fillRect(-btnW / 2 + 2, -btnH / 2 + 2, btnW - 4, btnH / 2 - 2);
-        btnBg.lineStyle(1, 0xa88040, 0.6);
-        btnBg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
+        const btnEl = document.createElement('div');
+        btnEl.style.cssText = `
+            position:absolute;
+            z-index:101;
+            left:${paperRect.left + (paperRect.width - btnW) / 2}px;
+            top:${paperRect.bottom + 10}px;
+            width:${btnW}px;
+            height:${btnH}px;
+            background:#c49a60;
+            border-radius:8px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+            opacity:0;
+            transform:scale(0.8);
+            transition:opacity 0.4s ease, transform 0.4s ease, background 0.15s;
+            box-shadow:0 2px 8px rgba(196,154,96,0.3);
+        `;
 
-        const btnLabel = this.scene.add.text(0, 0, '领取礼物', {
-            fontSize: '14px', color: '#ffffff', fontFamily: 'serif',
-        }).setOrigin(0.5);
+        const label = document.createElement('span');
+        label.textContent = '领取礼物';
+        label.style.cssText = 'font-size:14px;color:#fff;font-family:serif;user-select:none;';
+        btnEl.appendChild(label);
+        document.body.appendChild(btnEl);
+        this.redeemBtnEl = btnEl;
 
-        const btn = this.scene.add.container(btnX, btnY, [btnBg, btnLabel])
-            .setSize(btnW, btnH).setAlpha(0).setScale(0.8);
-
-        // Glow
-        const glow = this.scene.add.graphics();
-        glow.fillStyle(0xc49a60, 0.12);
-        glow.fillRoundedRect(-btnW / 2 - 6, -btnH / 2 - 6, btnW + 12, btnH + 12, 12);
-        glow.setPosition(btnX, btnY).setAlpha(0);
-
-        this.letterContainer.add([btn, glow]);
-
-        this.scene.tweens.add({
-            targets: btn,
-            alpha: 1, scaleX: 1, scaleY: 1,
-            duration: 400, ease: 'Back.easeOut',
-        });
-        this.scene.tweens.add({
-            targets: glow,
-            alpha: 0.7,
-            duration: 900, yoyo: true, repeat: -1,
+        // Animate in
+        requestAnimationFrame(() => {
+            btnEl.style.opacity = '1';
+            btnEl.style.transform = 'scale(1)';
         });
 
-        btn.setInteractive({ useHandCursor: true });
-        btn.on('pointerover', () => {
-            this.scene.tweens.add({ targets: btn, scaleX: 1.08, scaleY: 1.08, duration: 120 });
-            btnBg.clear();
-            btnBg.fillStyle(0xd4aa70, 1);
-            btnBg.fillRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
-            btnBg.fillStyle(0xe0b880, 0.4);
-            btnBg.fillRect(-btnW / 2 + 2, -btnH / 2 + 2, btnW - 4, btnH / 2 - 2);
-            btnBg.lineStyle(1, 0xb89050, 0.6);
-            btnBg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
+        btnEl.addEventListener('mouseover', () => {
+            btnEl.style.background = '#d4aa70';
+            btnEl.style.transform = 'scale(1.08)';
         });
-        btn.on('pointerout', () => {
-            this.scene.tweens.add({ targets: btn, scaleX: 1, scaleY: 1, duration: 120 });
-            btnBg.clear();
-            btnBg.fillStyle(0xc49a60, 1);
-            btnBg.fillRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
-            btnBg.fillStyle(0xd4aa70, 0.4);
-            btnBg.fillRect(-btnW / 2 + 2, -btnH / 2 + 2, btnW - 4, btnH / 2 - 2);
-            btnBg.lineStyle(1, 0xa88040, 0.6);
-            btnBg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
+        btnEl.addEventListener('mouseout', () => {
+            btnEl.style.background = '#c49a60';
+            btnEl.style.transform = 'scale(1)';
         });
-        btn.on('pointerdown', () => {
-            btn.removeInteractive();
-            this.scene.tweens.killTweensOf(glow);
-            glow.destroy();
+        btnEl.addEventListener('click', () => {
+            btnEl.style.pointerEvents = 'none';
             this.config.onRedeem?.();
-            this.scene.tweens.add({
-                targets: this.letterContainer,
-                alpha: 0, scaleX: 0.3, scaleY: 0.3,
-                duration: 600, ease: 'Cubic.easeIn',
-                onComplete: () => {
-                    this.letterContainer.destroy();
-                    this.showTicket();
-                },
+
+            // Fade out paper + button
+            this.paperEl.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+            this.paperEl.style.opacity = '0';
+            this.paperEl.style.transform = 'scale(0.3)';
+            btnEl.style.transition = 'opacity 0.6s ease';
+            btnEl.style.opacity = '0';
+
+            this.scene.time.delayedCall(700, () => {
+                if (this.redeemBtnEl) { this.redeemBtnEl.remove(); this.redeemBtnEl = null; }
+                this.paperEl.style.display = 'none';
+                this.showTicket();
             });
         });
     }
 
     // ════════════════════════════════════════════
-    //  Ticket (redeem result)
+    //  Ticket (redeem result) — still Canvas-based
     // ════════════════════════════════════════════
 
     private showTicket() {
         const W = this.scene.cameras.main.width;
         const H = this.scene.cameras.main.height;
-        const ticketW = 270;
+        const ticketW = 340;
         const ticketH = 190;
 
         const ticketGfx = this.scene.add.graphics();
@@ -584,28 +548,18 @@ export class EnvelopeLetter {
             fontSize: '10px', color: '#c49a60',
         }).setOrigin(0.5);
 
-        const methodLabel = this.scene.add.text(-ticketW / 2 + 28, -8, '领取方式', {
-            fontSize: '11px', color: '#a08a6a', fontFamily: 'serif',
-        });
-        const methodValue = this.scene.add.text(-ticketW / 2 + 28, 10, this.config.redeemMethod || '', {
-            fontSize: '14px', color: '#5a4a3a', fontFamily: 'serif',
+        const methodLine = this.scene.add.text(-ticketW / 2 + 28, -38, '领取方式：' + (this.config.redeemMethod || ''), {
+            fontSize: '12px', color: '#4a3a2a', fontFamily: 'serif',
         });
 
-        const codeLabel = this.scene.add.text(-ticketW / 2 + 28, 28, '兑换码', {
-            fontSize: '11px', color: '#a08a6a', fontFamily: 'serif',
-        });
-        const codeValue = this.scene.add.text(-ticketW / 2 + 28, 46, this.config.redeemCode || '', {
-            fontSize: '14px', color: '#5a4a3a', fontFamily: 'serif',
+        const codeLine = this.scene.add.text(-ticketW / 2 + 28, -14, '兑换码：' + (this.config.redeemCode || ''), {
+            fontSize: '12px', color: '#4a3a2a', fontFamily: 'serif',
         });
 
-        const expiryLabel = this.scene.add.text(-ticketW / 2 + 28, 58, '有效时间', {
-            fontSize: '11px', color: '#a08a6a', fontFamily: 'serif',
-        });
-        const expiryValue = this.scene.add.text(-ticketW / 2 + 28, 76, '永 久 有 效', {
-            fontSize: '14px', color: '#8a3a3a', fontFamily: 'serif',
+        const expiryLine = this.scene.add.text(-ticketW / 2 + 28, 10, '有效时间：永 久 有 效', {
+            fontSize: '12px', color: '#7a2a2a', fontFamily: 'serif',
         });
 
-        // Seal stamp
         const seal = this.scene.add.graphics();
         seal.fillStyle(0xcc4444, 0.25);
         seal.fillCircle(0, 0, 20);
@@ -620,9 +574,9 @@ export class EnvelopeLetter {
             .setAngle(-15);
 
         const ticketContainer = this.scene.add.container(W / 2, H / 2, [
-            ticketGfx, ticketTitle, star, methodLabel, methodValue,
-            codeLabel, codeValue,
-            expiryLabel, expiryValue, sealContainer,
+            ticketGfx, ticketTitle, star,
+            methodLine, codeLine, expiryLine,
+            sealContainer,
         ]).setDepth(210).setAlpha(0).setScale(0.2);
 
         this.scene.tweens.add({

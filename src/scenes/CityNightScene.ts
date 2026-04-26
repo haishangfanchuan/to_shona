@@ -3,6 +3,10 @@ import { CONSTANTS } from '../config/constants';
 import { Player } from '../components/Player';
 import { NPC } from '../components/NPC';
 import { VirtualJoystick } from '../components/VirtualJoystick';
+import { TemperatureBar } from '../components/TemperatureBar';
+import { PaceSyncSystem } from '../components/PaceSyncSystem';
+import { VignetteEffect } from '../components/VignetteEffect';
+import { SnowEffect } from '../components/SnowEffect';
 import { playPop } from '../components/SoundGenerators';
 import { IdleChatBubble } from '../components/IdleChatBubble';
 import { EmoteBubble } from '../components/EmoteBubble';
@@ -13,6 +17,11 @@ export class CityNightScene extends Phaser.Scene {
     private player!: Player;
     private npc!: NPC;
     private joystick!: VirtualJoystick;
+    private tempBar!: TemperatureBar;
+    private paceSync!: PaceSyncSystem;
+    private vignette!: VignetteEffect;
+    private snow!: SnowEffect;
+    private isFrozen = false;
 
     private sceneEnding = false;
     private restTriggered = false;
@@ -43,64 +52,20 @@ export class CityNightScene extends Phaser.Scene {
         this.cameras.main.setBounds(0, 0, sceneLen, CONSTANTS.SCREEN_HEIGHT);
         this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0);
 
-        // 4. Fixed temperature bar — 1/4, always blue
-        const barX = (CONSTANTS.SCREEN_WIDTH - 160) / 2;
-        const barY = 20;
-        const barW = 160;
-        const barH = 16;
-        const barR = 8;
-        const fillW = barW * 3 / 4;
+        // 4. Vignette overlay
+        this.vignette = new VignetteEffect(this);
 
-        const glowBar = this.add.graphics().setScrollFactor(0).setDepth(98);
-        glowBar.setPosition(barX, barY);
-        // Warm glow for city night bar
-        const barColor = Phaser.Display.Color.GetColor(255, 112, 48);
-        glowBar.fillStyle(barColor, 0.15);
-        glowBar.fillRoundedRect(-4, -4, barW + 8, barH + 8, barR + 4);
+        // 4.5 Snow effect (starts when temp hits 0)
+        this.snow = new SnowEffect(this);
 
-        const bgBar = this.add.graphics().setScrollFactor(0).setDepth(99);
-        bgBar.setPosition(barX, barY);
-        bgBar.fillStyle(0x1a1a2e, 0.9);
-        bgBar.fillRoundedRect(0, 0, barW, barH, barR);
-        bgBar.fillStyle(0xffffff, 0.04);
-        bgBar.fillRoundedRect(2, 1, barW - 4, barH / 2 - 1, barR - 2);
+        // 5. Temperature bar (fixed on screen)
+        this.tempBar = new TemperatureBar(this, (CONSTANTS.SCREEN_WIDTH - 160) / 2, 20);
+        this.tempBar.setScrollFactor(0, 0);
 
-        // Gradient fill (warm orange)
-        const fillBar = this.add.graphics().setScrollFactor(0).setDepth(100);
-        fillBar.setPosition(barX, barY);
-        const steps = 8;
-        for (let i = 0; i < steps; i++) {
-            const t = i / (steps - 1);
-            const factor = 1.2 - 0.4 * t;
-            const sr = Math.min(255, Math.floor(255 * factor));
-            const sg = Math.min(255, Math.floor(112 * factor));
-            const sb = Math.min(255, Math.floor(48 * factor));
-            fillBar.fillStyle(Phaser.Display.Color.GetColor(sr, sg, sb), 1);
-            const sliceY = Math.floor(i * barH / steps);
-            const nextY = Math.floor((i + 1) * barH / steps);
-            const sliceH = nextY - sliceY;
-            if (i === 0) {
-                fillBar.fillRoundedRect(0, sliceY, fillW, sliceH + 1, { tl: barR, tr: barR, bl: 0, br: 0 });
-            } else if (i === steps - 1) {
-                fillBar.fillRoundedRect(0, sliceY, fillW, sliceH + 1, { tl: 0, tr: 0, bl: barR, br: barR });
-            } else {
-                fillBar.fillRect(0, sliceY, fillW, sliceH + 1);
-            }
-        }
+        // 5.5 Pace sync system
+        this.paceSync = new PaceSyncSystem(this.npc, this.tempBar, this.vignette);
 
-        // Gloss
-        const glossBar = this.add.graphics().setScrollFactor(0).setDepth(101);
-        glossBar.setPosition(barX, barY);
-        glossBar.fillStyle(0xffffff, 0.25);
-        glossBar.fillRoundedRect(2, 1, fillW - 4, 5, 3);
-
-        // Border
-        const borderBar = this.add.graphics().setScrollFactor(0).setDepth(102);
-        borderBar.setPosition(barX, barY);
-        borderBar.lineStyle(1.5, 0xffffff, 0.5);
-        borderBar.strokeRoundedRect(0, 0, barW, barH, barR);
-
-        // 5. Virtual joystick
+        // 6. Virtual joystick
         this.joystick = new VirtualJoystick(this);
         this.player.bindJoystick(this.joystick);
 
@@ -129,7 +94,25 @@ export class CityNightScene extends Phaser.Scene {
         // 3. Waiting at rest trigger point
         this.handleWaiting();
 
-        // 3.5 Idle chat when close
+        // 3.5 Pace sync (skip when waiting or NPC off-screen)
+        if (!this.isSomeoneWaiting && !this.npcWaitingOffscreen) {
+            this.paceSync.update(this.player.getX(), this.npc.getX());
+        }
+
+        // 3.6 Snow + freeze check
+        this.snow.update();
+        if (!this.isFrozen && this.tempBar.getValue() <= 0) {
+            this.isFrozen = true;
+            this.tempBar.freeze();
+            this.snow.start();
+        }
+        if (this.isFrozen && this.tempBar.getValue() >= CONSTANTS.TEMPERATURE.MAX / 3) {
+            this.isFrozen = false;
+            this.tempBar.unfreeze();
+            this.snow.stop();
+        }
+
+        // 4. Idle chat when close
         this.idleChat.update(this.player.getX(), this.npc.getX(), this.player.sprite, this.npc.sprite, this.emoteBubble.isActive, this.isSomeoneWaiting);
 
         // 3.6 Random emote bubble (skip if chat is showing)
@@ -164,21 +147,28 @@ export class CityNightScene extends Phaser.Scene {
         const playerX = this.player.getX();
         const npcX = this.npc.getX();
 
+        const offset = playerX - npcX;
+        const inSyncRange = offset >= -40 && offset <= 60;
+
         const playerClose = Math.abs(playerX - REST_TRIGGER_X) < 60;
         const npcClose = Math.abs(npcX - REST_TRIGGER_X) < 60;
 
         this.isSomeoneWaiting = false;
 
-        if (playerClose && !npcClose) {
+        if (playerClose && !npcClose && !inSyncRange) {
             this.isSomeoneWaiting = true;
-            const body = this.player.sprite.body as Phaser.Physics.Arcade.Body;
-            if (body.velocity.x > CONSTANTS.SPEED.NPC_WALK) {
+            const vx = (this.player.sprite.body as Phaser.Physics.Arcade.Body).velocity.x;
+            if (vx > CONSTANTS.SPEED.NPC_WALK) {
                 this.player.sprite.setVelocityX(CONSTANTS.SPEED.NPC_WALK);
+            } else if (vx < -CONSTANTS.SPEED.NPC_WALK) {
+                this.player.sprite.setVelocityX(-CONSTANTS.SPEED.NPC_WALK);
             }
+            this.tempBar.decreaseFast();
             return;
-        } else if (npcClose && !playerClose) {
+        } else if (npcClose && !playerClose && !inSyncRange) {
             this.isSomeoneWaiting = true;
             this.npc.stopWalkLowHead();
+            this.tempBar.decreaseFast();
             return;
         }
 

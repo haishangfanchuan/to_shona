@@ -11,7 +11,7 @@ export class NPC {
 
     constructor(scene: Phaser.Scene, x: number, y: number) {
         this.sprite = scene.physics.add.sprite(x, y, 'npc_sheet');
-        this.sprite.setScale(1.5);
+        this.sprite.setScale(0.135);
         this.sprite.setOrigin(0.5, 1);
         this.sprite.setCollideWorldBounds(false);
         (this.sprite.body as Phaser.Physics.Arcade.Body).setMaxVelocityX(CONSTANTS.SPEED.NPC_WALK);

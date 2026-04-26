@@ -117,6 +117,7 @@ export class EndingScene extends Phaser.Scene {
     private canvas!: Phaser.GameObjects.Graphics;
     private hint!: Phaser.GameObjects.Text;
     private envelopeShown = false;
+    private envelope: EnvelopeLetter | null = null;
     private active = false;
 
     // BE state
@@ -324,7 +325,7 @@ export class EndingScene extends Phaser.Scene {
         const H = CONSTANTS.SCREEN_HEIGHT;
 
         const isHE = type === 'he';
-        const envelope = new EnvelopeLetter(this, {
+        this.envelope = new EnvelopeLetter(this, {
             letterText: isHE ? DIALOGUES.ENDING_A_LETTER : DIALOGUES.ENDING_B_LETTER,
             showRedeemButton: true,
             redeemMethod: isHE ? DIALOGUES.ENDING_A_REDEEM_METHOD : DIALOGUES.ENDING_B_REDEEM_METHOD,
@@ -332,7 +333,7 @@ export class EndingScene extends Phaser.Scene {
             onRedeem: () => {},
             onComplete: () => {},
         });
-        envelope.show(W / 2, H * 0.35);
+        this.envelope.show(W / 2, H * 0.4);
     }
 
     private spawnBEDebrisBurst(x: number, y: number) {

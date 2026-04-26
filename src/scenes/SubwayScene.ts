@@ -20,7 +20,7 @@ export class SubwayScene extends Phaser.Scene {
     private lineIndex = 0;
     private floatingTexts: Phaser.GameObjects.Text[] = [];
     private floatingTextTargets: Map<Phaser.GameObjects.Text, number> = new Map();
-    private isTextAnimating = false;
+    private allTextShown = false;
     private hint!: Phaser.GameObjects.Text;
     private choicesVisible = false;
 
@@ -42,9 +42,11 @@ export class SubwayScene extends Phaser.Scene {
         this.lineIndex = 0;
         this.floatingTexts = [];
         this.floatingTextTargets = new Map();
-        this.isTextAnimating = false;
+        this.allTextShown = false;
         this.choicesVisible = false;
         this.snowStarted = false;
+        this.userScrolled = false;
+        this.scrollActive = false;
 
         // 1. Static subway background (1085×1808)
         const subScale = CONSTANTS.SCREEN_WIDTH / 1085;
@@ -224,12 +226,43 @@ export class SubwayScene extends Phaser.Scene {
         if (this.snowStarted) {
             this.snow.update();
         }
+
+        // Auto-scroll text
+        if (this.scrollActive && !this.userScrolled && this._scrollLayout) {
+            const delta = this.game.loop.delta / 1000;
+            this.scrollOffsetY += this.autoScrollSpeed * delta;
+            if (this.scrollOffsetY >= this._scrollLayout.blockH) {
+                this.scrollOffsetY -= this._scrollLayout.blockH;
+            }
+        }
+
+        // Reposition scroll texts each frame
+        if (this.scrollActive && this._scrollLayout) {
+            const layout = this._scrollLayout;
+            const offset = this.scrollOffsetY % layout.blockH;
+            for (let i = 0; i < this.scrollAllTexts.length; i++) {
+                const t = this.scrollAllTexts[i];
+                // Position within one block, then wrap with modulo
+                const baseY = layout.lineY[i];
+                let screenY = layout.viewTop + baseY - offset;
+                // Wrap into view range using modulo of blockH
+                if (screenY > layout.viewBottom + 50) screenY -= layout.blockH;
+                if (screenY < layout.viewTop - 50) screenY += layout.blockH;
+                t.y = screenY;
+                // Clip: hide texts outside viewport
+                if (screenY + t.height < layout.viewTop || screenY > layout.viewBottom) {
+                    t.setAlpha(0);
+                } else {
+                    t.setAlpha(1);
+                }
+            }
+        }
     }
 
     private showHint() {
         this.hint = this.add.text(
             CONSTANTS.SCREEN_WIDTH / 2, 580,
-            '点击屏幕说出口', {
+            '点击屏幕', {
                 fontSize: '18px',
                 color: '#aaaaaa',
                 fontFamily: 'serif'
@@ -252,9 +285,7 @@ export class SubwayScene extends Phaser.Scene {
     private onPointerDown() {
         if (this.lineIndex >= DIALOGUES.SUBWAY_APOLOGY.length) return;
         if (this.choicesVisible) return;
-        if (this.isTextAnimating) return;
-
-        this.isTextAnimating = true;
+        if (this.allTextShown) return;
 
         // Stop emote bubbles once player starts talking
         this.emoteStopped = true;
@@ -269,9 +300,12 @@ export class SubwayScene extends Phaser.Scene {
             });
         }
 
+        // Instantly finish any in-progress text animations
+        this.finishPendingAnimations();
+
         const textStr = DIALOGUES.SUBWAY_APOLOGY[this.lineIndex];
         const startX = this.playerSprite.x;
-        const startY = this.playerSprite.y - 80;
+        const startY = this.playerSprite.y - 100;
 
         const textObj = this.add.text(startX, startY, textStr, {
             fontSize: '15px',
@@ -283,36 +317,24 @@ export class SubwayScene extends Phaser.Scene {
             wordWrap: { width: CONSTANTS.SCREEN_WIDTH - 40, useAdvancedWrap: true }
         }).setOrigin(0.5, 0.5).setAlpha(0).setDepth(50);
 
-        const TEXT_AREA_BOTTOM = 295;
+        const TEXT_AREA_BOTTOM = 300;
         const LINE_HEIGHT = 28;
         const targetX = CONSTANTS.SCREEN_WIDTH / 2;
 
-        // Shift existing texts up by one line; fade out those leaving the area
+        // Shift existing texts up by one line; instantly fade out those leaving the area
         for (const old of this.floatingTexts) {
             const currentTarget = this.floatingTextTargets.get(old) ?? old.y;
             const newY = currentTarget - LINE_HEIGHT;
             this.floatingTextTargets.set(old, newY);
-            if (newY < 40) {
-                this.tweens.add({
-                    targets: old,
-                    y: newY,
-                    alpha: 0,
-                    duration: 600,
-                    ease: 'Sine.easeInOut',
-                    onComplete: () => {
-                        const idx = this.floatingTexts.indexOf(old);
-                        if (idx !== -1) this.floatingTexts.splice(idx, 1);
-                        this.floatingTextTargets.delete(old);
-                        old.destroy();
-                    }
-                });
+            if (newY < 46) {
+                this.tweens.killTweensOf(old);
+                old.destroy();
+                const idx = this.floatingTexts.indexOf(old);
+                if (idx !== -1) this.floatingTexts.splice(idx, 1);
+                this.floatingTextTargets.delete(old);
             } else {
-                this.tweens.add({
-                    targets: old,
-                    y: newY,
-                    duration: 600,
-                    ease: 'Cubic.easeInOut'
-                });
+                this.tweens.killTweensOf(old);
+                old.setY(newY);
             }
         }
 
@@ -323,46 +345,141 @@ export class SubwayScene extends Phaser.Scene {
             x: targetX,
             y: TEXT_AREA_BOTTOM,
             alpha: 1,
-            duration: 1500,
+            duration: 800,
             ease: 'Sine.easeOut',
-            onComplete: () => {
-                this.isTextAnimating = false;
-            }
         });
 
-        playWhisper();
         this.floatingTexts.push(textObj);
         this.lineIndex++;
 
         if (this.lineIndex >= DIALOGUES.SUBWAY_APOLOGY.length) {
+            this.allTextShown = true;
             this.input.off('pointerdown', this.onPointerDown, this);
-            this.time.delayedCall(2000, () => {
+            this.time.delayedCall(1000, () => {
                 this.triggerFinalPresentation();
             });
         }
     }
 
-    private triggerFinalPresentation() {
-        const container = this.add.container(
-            CONSTANTS.SCREEN_WIDTH / 2, 0
-        ).setDepth(50);
+    private finishPendingAnimations() {
+        // Snap all in-progress floating texts to their target positions
+        const toRemove: Phaser.GameObjects.Text[] = [];
+        for (const old of this.floatingTexts) {
+            const target = this.floatingTextTargets.get(old);
+            if (target !== undefined) {
+                this.tweens.killTweensOf(old);
+                old.setY(target);
+                old.setAlpha(1);
+                if (target < 46) {
+                    toRemove.push(old);
+                }
+            }
+        }
+        for (const old of toRemove) {
+            old.destroy();
+            const idx = this.floatingTexts.indexOf(old);
+            if (idx !== -1) this.floatingTexts.splice(idx, 1);
+            this.floatingTextTargets.delete(old);
+        }
+    }
 
+    private scrollOffsetY = 0;
+    private scrollAllTexts: Phaser.GameObjects.Text[] = [];
+    private scrollActive = false;
+    private autoScrollSpeed = 25; // pixels per second
+    private userScrolled = false;
+
+    private triggerFinalPresentation() {
+        // Destroy floating text objects
         for (const txt of this.floatingTexts) {
-            txt.removeFromDisplayList();
-            txt.x = txt.x - CONSTANTS.SCREEN_WIDTH / 2;
-            container.add(txt);
+            this.tweens.killTweensOf(txt);
+            txt.destroy();
+        }
+        this.floatingTexts = [];
+        this.floatingTextTargets.clear();
+
+        if (this.hint) {
+            this.hint.setVisible(false);
         }
 
-        this.tweens.add({
-            targets: container,
-            scaleX: { from: 0.98, to: 1.02 },
-            scaleY: { from: 0.98, to: 1.02 },
-            duration: 2000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
+        // Viewport: temp bar bottom + 20px → character head top - 20px
+        const viewTop = 56;
+        const viewBottom = 307;
+        const viewH = viewBottom - viewTop;
+        const viewCX = CONSTANTS.SCREEN_WIDTH / 2;
+
+        const allLines = DIALOGUES.SUBWAY_APOLOGY;
+        const textW = CONSTANTS.SCREEN_WIDTH - 40;
+        const fontSize = '14px';
+        const lineSpacing = 12;
+
+        // Create ONE set of text objects — we'll position them each frame
+        const textObjs: Phaser.GameObjects.Text[] = [];
+        let totalH = 0;
+        for (const line of allLines) {
+            const t = this.add.text(viewCX, 0, line, {
+                fontSize, color: '#FFFFFF', fontFamily: 'serif',
+                align: 'center', stroke: '#000000', strokeThickness: 2,
+                wordWrap: { width: textW, useAdvancedWrap: true },
+                lineSpacing,
+            }).setOrigin(0.5, 0).setDepth(50);
+            textObjs.push(t);
+            totalH += t.height + 16;
+        }
+
+        const gap = 40;
+        const blockH = totalH + gap;
+        this.scrollAllTexts = textObjs;
+        this.scrollOffsetY = 0;
+
+        // Store line heights
+        const lineY: number[] = [];
+        let accY = 0;
+        for (const t of textObjs) {
+            lineY.push(accY);
+            accY += t.height + 16;
+        }
+
+        // Interactive zone
+        const scrollZone = this.add.zone(viewCX, viewTop + viewH / 2, CONSTANTS.SCREEN_WIDTH, viewH)
+            .setDepth(55).setInteractive();
+
+        let isDragging = false;
+        let dragStartY = 0;
+        let scrollStartY = 0;
+        const self = this;
+
+        scrollZone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            isDragging = true;
+            dragStartY = pointer.y;
+            scrollStartY = self.scrollOffsetY;
+            self.userScrolled = true;
         });
 
+        scrollZone.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+            if (!isDragging) return;
+            const dy = pointer.y - dragStartY;
+            self.scrollOffsetY = scrollStartY - dy;
+
+            if (self.scrollOffsetY >= blockH) {
+                self.scrollOffsetY -= blockH;
+                scrollStartY -= blockH;
+            } else if (self.scrollOffsetY < 0) {
+                self.scrollOffsetY += blockH;
+                scrollStartY += blockH;
+            }
+        });
+
+        scrollZone.on('pointerup', () => { isDragging = false; });
+        scrollZone.on('pointerupoutside', () => { isDragging = false; });
+
+        // Mark scroll as active so update() repositions texts
+        this.scrollActive = true;
+
+        // Store for update loop
+        this._scrollLayout = { viewTop, viewBottom, viewH, blockH, lineY };
+
+        // Optional glow effect
         if (this.currentTemp > 80) {
             const glow = this.add.circle(
                 CONSTANTS.SCREEN_WIDTH / 2, 240,
@@ -380,14 +497,19 @@ export class SubwayScene extends Phaser.Scene {
             });
         }
 
-        if (this.hint) {
-            this.hint.setVisible(false);
-        }
-
+        // Show choice buttons after a short delay
         this.time.delayedCall(1500, () => {
             this.showChoiceButtons();
         });
     }
+
+    private _scrollLayout: {
+        viewTop: number;
+        viewBottom: number;
+        viewH: number;
+        blockH: number;
+        lineY: number[];
+    } | null = null;
 
     private showChoiceButtons() {
         this.choicesVisible = true;

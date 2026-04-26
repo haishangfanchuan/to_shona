@@ -30,6 +30,6 @@ export function drawBubble(
     );
 
     // Thin border
-    g.lineStyle(0.8, 0x000000, 0.12);
+    g.lineStyle(1.0, 0x000000, 0.12);
     g.strokeRoundedRect(cx - pw, cy - ph, pw * 2, ph * 2, ph);
 }
