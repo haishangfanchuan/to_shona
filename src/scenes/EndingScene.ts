@@ -120,46 +120,61 @@ export class EndingScene extends Phaser.Scene {
         // Canvas for pixel-line ropes
         this.canvas = this.add.graphics().setDepth(5);
 
-        // Start with fresh HE flowers
+        // Build ropes across multiple frames to avoid jank
         this.ropes = [];
-        const spacingX = W / (PARAMS.ROPE_COUNT + 1);
         this.nodeCount = Math.max(20, Math.ceil(H / 18));
-        for (let i = 0; i < PARAMS.ROPE_COUNT; i++) {
-            const rope = this.createRope((i + 1) * spacingX, H, this.nodeCount);
+        const spacingX = W / (PARAMS.ROPE_COUNT + 1);
+
+        this.buildRopesBatch(spacingX, H, 0, 5, () => {
+            // Count total decorators for auto-wind trigger
+            this.beTotalDecorators = 0;
+            for (const rope of this.ropes) {
+                for (const n of rope.nodes) {
+                    if (n.decorator) this.beTotalDecorators++;
+                }
+            }
+
+            // Background transition: HE warm cream → BE cold gray over entire wilt duration
+            this.tweens.addCounter({
+                from: 0, to: 1, duration: 15000,
+                onUpdate: (tween) => {
+                    if (this.bePhase === 'collapse' || this.bePhase === 'done') return;
+                    const v = tween.getValue()!;
+                    const mid = 0.6;
+                    let cr: number, cg: number, cb: number;
+                    if (v < mid) {
+                        const t = v / mid;
+                        cr = Math.floor(0xf5 + (0x8a - 0xf5) * t);
+                        cg = Math.floor(0xf0 + (0x86 - 0xf0) * t);
+                        cb = Math.floor(0xeb + (0x80 - 0xeb) * t);
+                    } else {
+                        const t = (v - mid) / (1 - mid);
+                        cr = Math.floor(0x8a + (0x3a - 0x8a) * t);
+                        cg = Math.floor(0x86 + (0x3a - 0x86) * t);
+                        cb = Math.floor(0x80 + (0x3f - 0x80) * t);
+                    }
+                    this.cameras.main.setBackgroundColor(`rgb(${cr},${cg},${cb})`);
+                },
+            });
+        });
+    }
+
+    /** Create ropes in batches over multiple frames to spread the load. */
+    private buildRopesBatch(
+        spacingX: number, length: number, from: number,
+        batchSize: number, onComplete: () => void,
+    ) {
+        const end = Math.min(from + batchSize, PARAMS.ROPE_COUNT);
+        for (let i = from; i < end; i++) {
+            const rope = this.createRope((i + 1) * spacingX, length, this.nodeCount);
             this.ropes.push(rope);
         }
-
-        // Count total decorators for auto-wind trigger
-        this.beTotalDecorators = 0;
-        for (const rope of this.ropes) {
-            for (const n of rope.nodes) {
-                if (n.decorator) this.beTotalDecorators++;
-            }
+        if (end < PARAMS.ROPE_COUNT) {
+            this.time.delayedCall(1, () =>
+                this.buildRopesBatch(spacingX, length, end, batchSize, onComplete));
+        } else {
+            onComplete();
         }
-
-        // Background transition: HE warm cream → BE cold gray over entire wilt duration
-        this.tweens.addCounter({
-            from: 0, to: 1, duration: 15000,
-            onUpdate: (tween) => {
-                if (this.bePhase === 'collapse' || this.bePhase === 'done') return;
-                const v = tween.getValue()!;
-                // HE #f5f0eb → BE warm #8a8680 → BE cold #3a3a3f
-                const mid = 0.6;
-                let cr: number, cg: number, cb: number;
-                if (v < mid) {
-                    const t = v / mid;
-                    cr = Math.floor(0xf5 + (0x8a - 0xf5) * t);
-                    cg = Math.floor(0xf0 + (0x86 - 0xf0) * t);
-                    cb = Math.floor(0xeb + (0x80 - 0xeb) * t);
-                } else {
-                    const t = (v - mid) / (1 - mid);
-                    cr = Math.floor(0x8a + (0x3a - 0x8a) * t);
-                    cg = Math.floor(0x86 + (0x3a - 0x86) * t);
-                    cb = Math.floor(0x80 + (0x3f - 0x80) * t);
-                }
-                this.cameras.main.setBackgroundColor(`rgb(${cr},${cg},${cb})`);
-            },
-        });
     }
 
     private triggerWindGust() {
@@ -278,8 +293,8 @@ export class EndingScene extends Phaser.Scene {
 
             if (this.bePhase === 'idle') {
                 // Gradual wilt — 0.3x faster
-                this.beWiltProgress = Math.min(1, this.beWiltProgress + 0.000104);
-                const wiltChance = 0.00026 + this.beWiltProgress * 0.0039;
+                this.beWiltProgress = Math.min(1, this.beWiltProgress + 0.00015);
+                const wiltChance = 0.0005 + this.beWiltProgress * 0.006;
                 for (const rope of this.ropes) {
                     for (const n of rope.nodes) {
                         if (n.decorator && Math.random() < wiltChance) {
@@ -479,36 +494,34 @@ export class EndingScene extends Phaser.Scene {
         // Canvas for pixel-line ropes
         this.canvas = this.add.graphics().setDepth(5);
 
-        // Ropes
+        // Build ropes across multiple frames to avoid jank
         this.ropes = [];
-        const spacingX = W / (PARAMS.ROPE_COUNT + 1);
         this.nodeCount = Math.max(20, Math.ceil(H / 18));
-        for (let i = 0; i < PARAMS.ROPE_COUNT; i++) {
-            const rope = this.createRope((i + 1) * spacingX, H, this.nodeCount);
-            this.ropes.push(rope);
-        }
+        const spacingX = W / (PARAMS.ROPE_COUNT + 1);
 
-        // Butterflies
-        this.butterflies = [];
-        for (let b = 0; b < 2; b++) {
-            const text = this.add.text(-100, -100, '🦋', {
-                fontSize: '24px',
-            }).setOrigin(0.5).setDepth(20).setVisible(false);
-            this.butterflies.push({
-                x: 0, y: 0, active: false, targetX: 0,
-                baseY: 0, phase: 0, wingPhase: 0, done: false,
-                text,
+        this.buildRopesBatch(spacingX, H, 0, 5, () => {
+            // Butterflies
+            this.butterflies = [];
+            for (let b = 0; b < 2; b++) {
+                const text = this.add.text(-100, -100, '🦋', {
+                    fontSize: '24px',
+                }).setOrigin(0.5).setDepth(20).setVisible(false);
+                this.butterflies.push({
+                    x: 0, y: 0, active: false, targetX: 0,
+                    baseY: 0, phase: 0, wingPhase: 0, done: false,
+                    text,
+                });
+            }
+
+            // Hint
+            this.hint = this.add.text(W / 2, 40, '[ 点击屏幕唤出蝴蝶 ]', {
+                fontSize: '16px', color: '#666666', fontFamily: 'monospace',
+            }).setOrigin(0.5).setDepth(100);
+
+            this.time.delayedCall(1000, () => {
+                this.input.enabled = true;
+                this.input.on('pointerdown', () => this.triggerGather());
             });
-        }
-
-        // Hint
-        this.hint = this.add.text(W / 2, 40, '[ 点击屏幕唤出蝴蝶 ]', {
-            fontSize: '16px', color: '#666666', fontFamily: 'monospace',
-        }).setOrigin(0.5).setDepth(100);
-
-        this.time.delayedCall(1000, () => {
-            this.input.enabled = true;
-            this.input.on('pointerdown', () => this.triggerGather());
         });
     }
 
@@ -523,11 +536,11 @@ export class EndingScene extends Phaser.Scene {
             let texKey = '';
             let spriteSize = 0;
 
-            if (rand > 0.65) {
+            if (rand > 0.79) {
                 decorator = 'flower';
                 if (Math.random() > 0.5) { texKey = '__fc_flower1'; } else { texKey = '__fc_flower2'; }
                 spriteSize = 15;
-            } else if (rand > 0.45) {
+            } else if (rand > 0.57) {
                 decorator = 'leaf';
                 texKey = '__fc_leaf';
                 spriteSize = 15;
@@ -581,7 +594,7 @@ export class EndingScene extends Phaser.Scene {
             this.updateBE();
             return;
         }
-        if (!this.active) return;
+        if (!this.active || !this.butterflies || this.butterflies.length === 0) return;
         this.time0++;
 
         const H = CONSTANTS.SCREEN_HEIGHT;

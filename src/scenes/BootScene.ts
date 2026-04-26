@@ -10,18 +10,30 @@ export class BootScene extends Phaser.Scene {
 
     preload() {
         this.loadingBar = this.add.graphics();
+
+        const loadingText = this.add.text(
+            CONSTANTS.SCREEN_WIDTH / 2,
+            CONSTANTS.SCREEN_HEIGHT / 2 - 20,
+            '游戏加载中...', {
+                fontSize: '16px',
+                color: '#FFB088',
+                fontFamily: 'serif'
+            }
+        ).setOrigin(0.5);
+
         this.load.on('progress', (value: number) => {
             this.loadingBar.clear();
             this.loadingBar.fillStyle(0xFFB088, 1);
             this.loadingBar.fillRect(
                 CONSTANTS.SCREEN_WIDTH * 0.2,
-                CONSTANTS.SCREEN_HEIGHT / 2,
+                CONSTANTS.SCREEN_HEIGHT / 2 + 10,
                 CONSTANTS.SCREEN_WIDTH * 0.6 * value,
                 4
             );
         });
         this.load.on('complete', () => {
             this.loadingBar.destroy();
+            loadingText.destroy();
         });
         // Player spritesheet (444x887 per frame, 4 frames)
         this.load.spritesheet('player_sheet', 'assets/images/player/play.png', {

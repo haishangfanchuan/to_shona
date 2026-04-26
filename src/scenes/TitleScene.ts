@@ -41,7 +41,7 @@ export class TitleScene extends Phaser.Scene {
         this.input.once('pointerdown', () => {
             this.cameras.main.fadeOut(500, 0, 0, 0);
             this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('StreetScene');
+                this.scene.start('SubwayScene');
             });
         });
     }
