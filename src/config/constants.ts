@@ -12,14 +12,14 @@ export const CONSTANTS = {
     DISTANCE: {
         INIT: 100,
         SYNC_TARGET: 40,
-        TOO_FAR: -40,
+        TOO_FAR: -100,
         TOO_FAST: 60
     },
     TEMPERATURE: {
         MAX: 100,
         INIT: 100,
         SYNC_RECOVERY_RATE: 0.05,
-        FAR_DECAY_RATE: 0.05,
+        FAR_DECAY_RATE: 0.075,
         MEMORY_BONUS: 5
     }
 } as const;
