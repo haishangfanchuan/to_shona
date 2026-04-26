@@ -12,17 +12,12 @@ export class TitleScene extends Phaser.Scene {
 
         this.cameras.main.setBackgroundColor('#1a1020');
 
-        this.add.text(cx, cy - 80, '街角的话', {
-            fontSize: '44px',
+        this.add.text(cx, cy - 80, 'Apology letter to Shona', {
+            fontSize: '30px',
             color: '#FFB088',
             fontFamily: 'serif'
         }).setOrigin(0.5);
 
-        this.add.text(cx, cy, 'Words at the Corner', {
-            fontSize: '18px',
-            color: '#aa8866',
-            fontFamily: 'serif'
-        }).setOrigin(0.5);
 
         const hint = this.add.text(cx, cy + 120, '点击屏幕开始', {
             fontSize: '18px',
@@ -41,7 +36,7 @@ export class TitleScene extends Phaser.Scene {
         this.input.once('pointerdown', () => {
             this.cameras.main.fadeOut(500, 0, 0, 0);
             this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('SubwayScene');
+                this.scene.start('StreetScene');
             });
         });
     }

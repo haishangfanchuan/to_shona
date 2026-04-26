@@ -70,7 +70,7 @@ export class EndingScene extends Phaser.Scene {
     private nodeCount = 0;
     private time0 = 0;
     private canvas!: Phaser.GameObjects.Graphics;
-    private hint!: Phaser.GameObjects.Text;
+    private autoGatherTimer?: Phaser.Time.TimerEvent;
     private envelopeShown = false;
     private envelope: EnvelopeLetter | null = null;
     private active = false;
@@ -513,15 +513,13 @@ export class EndingScene extends Phaser.Scene {
                 });
             }
 
-            // Hint
-            this.hint = this.add.text(W / 2, 40, '[ 点击屏幕唤出蝴蝶 ]', {
-                fontSize: '16px', color: '#666666', fontFamily: 'monospace',
-            }).setOrigin(0.5).setDepth(100);
-
-            this.time.delayedCall(1000, () => {
-                this.input.enabled = true;
-                this.input.on('pointerdown', () => this.triggerGather());
+            // Auto trigger after 3s, or immediately on user tap
+            this.input.enabled = true;
+            this.input.on('pointerdown', () => {
+                this.triggerGather();
+                this.autoGatherTimer?.remove();
             });
+            this.autoGatherTimer = this.time.delayedCall(3000, () => this.triggerGather());
         });
     }
 
@@ -585,8 +583,6 @@ export class EndingScene extends Phaser.Scene {
         br.x = midX; br.y = baseY; br.baseY = baseY;
         br.targetX = W * 0.95; br.phase = Math.PI; br.wingPhase = 0;
         br.text.setVisible(true).setPosition(midX, baseY);
-
-        if (this.hint) this.hint.setVisible(false);
     }
 
     update() {

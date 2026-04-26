@@ -20,7 +20,8 @@
       "Bash(identify \"E:/project/to_shona_v2/public/assets/images/npc.png\")",
       "Bash(node -e \"const {createCanvas, loadImage} = require\\('canvas'\\); loadImage\\('public/assets/images/scene_2/player_sit.png'\\).then\\(i => console.log\\(i.width, i.height\\)\\)\")",
       "Bash(python -c \"from PIL import Image; i=Image.open\\('public/assets/images/scene_2/player_sit.png'\\); print\\(i.size\\)\")",
-      "Bash(identify public/assets/images/scene_2/player_sit.png)"
+      "Bash(identify public/assets/images/scene_2/player_sit.png)",
+      "Bash(npx sharp-cli *)"
     ]
   }
 }
