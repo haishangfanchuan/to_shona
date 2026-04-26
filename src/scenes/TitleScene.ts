@@ -42,8 +42,8 @@ export class TitleScene extends Phaser.Scene {
         // --- Figures sitting on rooftop ---
         // Central building rooftop (x:120, w:160, h:100) -> top at baseY - 100
         const roofTopY = H * 0.60 - 100;
-        this.add.image(cx - 38, roofTopY, 'npc_sit').setOrigin(0.5, 1).setScale(0.05).setDepth(5);
-        this.add.image(cx + 38, roofTopY, 'player_sit').setOrigin(0.5, 1).setScale(0.05).setDepth(5);
+        this.add.image(cx - 38, roofTopY, 'npc_sit').setOrigin(0.5, 1 - 0.25).setScale(0.04).setDepth(5);
+        this.add.image(cx + 38, roofTopY, 'player_sit').setOrigin(0.5, 1 - 0.25).setScale(0.04).setDepth(5);
 
         // --- Distant warm lights ---
         const lights = [60, 120, 180, 250, 310, 350];
@@ -87,7 +87,7 @@ export class TitleScene extends Phaser.Scene {
         });
 
         // Main title
-        const title = this.add.text(cx, cy - 140, '步履之间', {
+        this.add.text(cx, cy - 140, '步履之间', {
             fontSize: '44px',
             color: '#FFCCAA',
             fontFamily: 'serif',
@@ -109,7 +109,7 @@ export class TitleScene extends Phaser.Scene {
         });
 
         // --- Game tip ---
-        const tip = this.add.text(cx, cy + 185, '长按屏幕或方向键移动', {
+        this.add.text(cx, cy + 185, '长按屏幕或方向键移动', {
             fontSize: '14px',
             color: '#555555',
             fontFamily: 'serif',
