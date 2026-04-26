@@ -109,7 +109,7 @@ export class TitleScene extends Phaser.Scene {
         });
 
         // --- Game tip ---
-        this.add.text(cx, cy + 185, '长按屏幕或方向键移动', {
+        this.add.text(cx, cy + 185, '滑动长按屏幕或方向键移动', {
             fontSize: '14px',
             color: '#555555',
             fontFamily: 'serif',
