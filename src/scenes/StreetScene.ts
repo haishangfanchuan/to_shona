@@ -102,6 +102,16 @@ export class StreetScene extends Phaser.Scene {
             this.paceSync.update(this.player.getX(), this.npc.getX());
         }
 
+        // 4.1 NPC bubble when player too fast
+        if (this.npc.getIsPaused() && !this.npcWaitingOffscreen && !this.isSomeoneWaiting) {
+            if (!this.npcTooFastBubbleShown) {
+                this.idleChat.forceShowText(this.npc.sprite, '等等我，别走太快');
+                this.npcTooFastBubbleShown = true;
+            }
+        } else {
+            this.npcTooFastBubbleShown = false;
+        }
+
         // 4.5 Idle chat when close
         this.idleChat.update(this.player.getX(), this.npc.getX(), this.player.sprite, this.npc.sprite, this.emoteBubble.isActive, this.isSomeoneWaiting);
 
@@ -135,6 +145,8 @@ export class StreetScene extends Phaser.Scene {
     }
 
     private npcWaitingOffscreen = false;
+    private npcTooFastBubbleShown = false;
+    private npcOffscreenBubbleShown = false;
 
     private handleNpcOffscreen() {
         if (this.sceneEnding || this.memoryPopupActive || this.isSomeoneWaiting) return;
@@ -142,14 +154,18 @@ export class StreetScene extends Phaser.Scene {
         const camRight = this.cameras.main.scrollX + CONSTANTS.SCREEN_WIDTH;
         const npcX = this.npc.getX();
 
-        if (npcX > camRight) {
-            // NPC off-screen right — stop and wait
+        if (npcX > camRight - 40) {
             this.npc.stopWalkLowHead();
             this.npcWaitingOffscreen = true;
+            if (!this.npcOffscreenBubbleShown) {
+                this.idleChat.forceShowText(this.npc.sprite, '走快点！');
+                this.npcOffscreenBubbleShown = true;
+            }
         } else if (this.npcWaitingOffscreen && npcX <= camRight - 60) {
             // Player caught up — resume
             this.npc.resumeWalk();
             this.npcWaitingOffscreen = false;
+            this.npcOffscreenBubbleShown = false;
         }
     }
 

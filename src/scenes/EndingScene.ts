@@ -11,24 +11,8 @@ const PARAMS = {
     CONSTRAINT_ITERATIONS: 4,
     BUTTERFLY_SPEED: 0.1875,
     PETAL_FALL_CHANCE: 0.0008,
-    PIXEL_SIZE: 3,
-    SPRITE_SCALE: 2,    // render at higher res then display small
-};
-
-// HE palette: 0=transparent, 1=pink, 2=dark pink, 3=green, 4=dark green, 5=white, 6=blue, 7=orange, 8=black
-const PALETTE: Record<string, number> = {
-    '1': 0xffb7c5, '2': 0xe8789a, '3': 0x7ec850, '4': 0x4a8c2a,
-    '5': 0xffffff, '6': 0x6eb5ff, '7': 0xffa54f, '8': 0x2a2a3e,
-    '9': 0xc490ff, 'a': 0xffda6b, 'b': 0xff6b8a, 'c': 0xffd4e8,
-    'd': 0x9b6dff, 'e': 0xffe89a,
-};
-
-// BE palette: withered brown/dark ochre/gray-brown tones
-const PALETTE_BE: Record<string, number> = {
-    '1': 0xa08060, '2': 0x7a5a3a, '3': 0x8a7a58, '4': 0x5a4a30,
-    '5': 0x908880, '6': 0x7a6b5d, '7': 0x5c4033, '8': 0x3a3530,
-    '9': 0x807060, 'a': 0x9a8460, 'b': 0x6a5038, 'c': 0x8a7a5a,
-    'd': 0x584030, 'e': 0x706050,
+    ROPE_WIDTH: 2,
+    SPRITE_SCALE: 1,
 };
 
 const SPRITE_FLOWER = [
@@ -160,16 +144,16 @@ export class EndingScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#f5f0eb');
 
         // Generate HE textures (fresh) + BE textures (withered)
-        const ps = PARAMS.PIXEL_SIZE;
-        this.genTexSmooth('__fc_flower1', SPRITE_FLOWER, ps);
-        this.genTexSmooth('__fc_flower2', SPRITE_FLOWER_2, ps);
-        this.genTexSmooth('__fc_leaf', SPRITE_LEAF, ps);
-        this.genTexSmoothBE('__be_dead_flower1', SPRITE_DEAD_FLOWER, ps);
-        this.genTexSmoothBE('__be_dead_flower2', SPRITE_DEAD_FLOWER_2, ps);
-        this.genTexSmoothBE('__be_dead_leaf', SPRITE_DEAD_LEAF, ps);
-        this.genTexSmoothBE('__be_petal_dead_f', SPRITE_PETAL, ps);
-        this.genTexSmoothBE('__be_petal_dead_l', SPRITE_DEAD_LEAF, ps);
-        this.genTexSmoothBE('__be_debris', SPRITE_DEBRIS, ps);
+        const baseSize = 5;
+        this.genTexSmooth('__fc_flower1', SPRITE_FLOWER, baseSize);
+        this.genTexSmooth('__fc_flower2', SPRITE_FLOWER_2, baseSize);
+        this.genTexSmooth('__fc_leaf', SPRITE_LEAF, baseSize);
+        this.genTexSmoothBE('__be_dead_flower1', SPRITE_DEAD_FLOWER, baseSize);
+        this.genTexSmoothBE('__be_dead_flower2', SPRITE_DEAD_FLOWER_2, baseSize);
+        this.genTexSmoothBE('__be_dead_leaf', SPRITE_DEAD_LEAF, baseSize);
+        this.genTexSmoothBE('__be_petal_dead_f', SPRITE_PETAL, baseSize);
+        this.genTexSmoothBE('__be_petal_dead_l', SPRITE_DEAD_LEAF, baseSize);
+        this.genTexSmoothBE('__be_debris', SPRITE_DEBRIS, baseSize);
 
         // Canvas for pixel-line ropes
         this.canvas = this.add.graphics().setDepth(5);
@@ -216,53 +200,42 @@ export class EndingScene extends Phaser.Scene {
         });
     }
 
-    private genTexSmoothBE(key: string, sprite: string[], pixelSize: number) {
-        if (this.textures.exists(key)) this.textures.remove(key);
-        const scale = PARAMS.SPRITE_SCALE;
-        const rows = sprite.length;
-        const cols = sprite[0].length;
-        const rw = cols * pixelSize * scale;
-        const rh = rows * pixelSize * scale;
+    private genTexSmoothBE(key: string, _sprite: string[], _pixelSize: number) {
+        if (this.textures.exists(key)) return;
+        const size = 64;
         const canvas = document.createElement('canvas');
-        canvas.width = rw;
-        canvas.height = rh;
+        canvas.width = size;
+        canvas.height = size;
         const ctx = canvas.getContext('2d')!;
+        ctx.clearRect(0, 0, size, size);
 
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const ch = sprite[r][c];
-                if (ch === '0') continue;
-                const hex = PALETTE_BE[ch];
-                if (!hex) continue;
-                const rr = (hex >> 16) & 0xff;
-                const gg = (hex >> 8) & 0xff;
-                const bb = hex & 0xff;
+        const cx = size / 2, cy = size / 2;
 
-                const cx = (c + 0.5) * pixelSize * scale;
-                const cy = (r + 0.5) * pixelSize * scale;
-                const radius = pixelSize * scale * 0.55;
-
-                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.3);
-                grad.addColorStop(0, `rgba(${rr},${gg},${bb},0.95)`);
-                grad.addColorStop(0.6, `rgba(${rr},${gg},${bb},0.7)`);
-                grad.addColorStop(1, `rgba(${rr},${gg},${bb},0)`);
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(cx, cy, radius * 1.3, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
-                ctx.beginPath();
-                ctx.arc(cx, cy, radius * 0.75, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        if (key.includes('dead_flower1')) {
+            this.drawRealisticFlower(ctx, cx, cy, size, 0xa08060, 0x7a5a3a, 0x9a8460, 0x8a7a58, false);
+        } else if (key.includes('dead_flower2')) {
+            this.drawRealisticFlower(ctx, cx, cy, size, 0x6a5038, 0x5c4033, 0x807060, 0x8a7a58, false);
+        } else if (key.includes('debris')) {
+            this.drawDebris(ctx, cx, cy, size);
+        } else if (key.includes('petal_dead_f')) {
+            this.drawRealisticPetal(ctx, cx, cy, size, 0xa08060, 0x7a5a3a);
+        } else if (key.includes('petal_dead_l') || key.includes('dead_leaf')) {
+            this.drawRealisticLeaf(ctx, cx, cy, size, 0x8a7a58, 0x5a4a30);
         }
 
-        const imgData = ctx.getImageData(0, 0, rw, rh);
-        const blurred = this.simpleBlur(imgData, 1);
-        ctx.putImageData(blurred, 0, 0);
-
         this.textures.addCanvas(key, canvas);
+    }
+
+    private drawDebris(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
+        const w = size * 0.15;
+        const h = size * 0.25;
+
+        ctx.fillStyle = 'rgba(107,80,40,0.8)';
+        ctx.beginPath();
+        ctx.moveTo(cx - w, cy - h);
+        ctx.bezierCurveTo(cx + w * 0.5, cy - h * 0.6, cx + w, cy + h * 0.3, cx + w * 0.3, cy + h);
+        ctx.bezierCurveTo(cx - w * 0.5, cy + h * 0.5, cx - w * 1.2, cy, cx - w, cy - h);
+        ctx.fill();
     }
 
     private triggerWindGust() {
@@ -342,7 +315,7 @@ export class EndingScene extends Phaser.Scene {
             const speed = 1 + Math.random() * 3;
             const colorHex = Math.random() > 0.5 ? 0x6b5028 : 0x9b7b3a;
             const img = this.add.image(x, y, '__be_debris')
-                .setOrigin(0.5).setDepth(15).setScale(0.3 + Math.random() * 0.4)
+                .setOrigin(0.5).setDepth(15).setScale(0.15 + Math.random() * 0.2)
                 .setTint(colorHex);
             this.beDebris.push({
                 x, y,
@@ -352,7 +325,7 @@ export class EndingScene extends Phaser.Scene {
                 rotSpeed: (Math.random() - 0.5) * 0.15,
                 life: 1,
                 color: colorHex,
-                size: PARAMS.PIXEL_SIZE * 3,
+                size: 10,
                 img,
             });
         }
@@ -489,7 +462,6 @@ export class EndingScene extends Phaser.Scene {
     private drawBERopes() {
         const g = this.canvas;
         g.clear();
-        const ps = PARAMS.PIXEL_SIZE;
 
         // Interpolate rope color: HE blue (0xc8dcff) → BE brown (0x7a6b5d)
         const wp = this.beWiltProgress;
@@ -498,13 +470,27 @@ export class EndingScene extends Phaser.Scene {
         const ropeB = Math.floor(0xff + (0x5d - 0xff) * wp);
         const ropeColor = (ropeR << 16) | (ropeG << 8) | ropeB;
 
+        g.lineStyle(PARAMS.ROPE_WIDTH, ropeColor, 0.7);
         for (const rope of this.ropes) {
             const nodes = rope.nodes;
-            g.fillStyle(ropeColor, 0.5);
+            g.beginPath();
+            let hasStarted = false;
             for (let i = 0; i < nodes.length - 1; i++) {
-                // Skip broken links
-                if (nodes[i + 1].brokenAbove) continue;
-                this.drawPixelLine(g, ps, nodes[i].x, nodes[i].y, nodes[i + 1].x, nodes[i + 1].y);
+                if (nodes[i + 1].brokenAbove) {
+                    if (hasStarted) {
+                        g.stroke();
+                        hasStarted = false;
+                    }
+                    continue;
+                }
+                if (!hasStarted) {
+                    g.moveTo(nodes[i].x, nodes[i].y);
+                    hasStarted = true;
+                }
+                g.lineTo(nodes[i + 1].x, nodes[i + 1].y);
+            }
+            if (hasStarted) {
+                g.stroke();
             }
         }
     }
@@ -540,7 +526,7 @@ export class EndingScene extends Phaser.Scene {
     private spawnBEDeadLeaf(x: number, y: number, type: 'flower' | 'leaf') {
         const texKey = type === 'flower' ? '__be_petal_dead_f' : '__be_petal_dead_l';
         const img = this.add.image(x, y, texKey).setOrigin(0.5).setDepth(15)
-            .setScale(0.5);
+            .setScale(0.25);
         this.beLeaves.push({
             x, y,
             vx: 0.5 + Math.random() * 1.5,
@@ -549,7 +535,7 @@ export class EndingScene extends Phaser.Scene {
             rotSpeed: (Math.random() - 0.5) * 0.08,
             life: 1,
             swayPhase: Math.random() * Math.PI * 2,
-            size: PARAMS.PIXEL_SIZE * 5,
+            size: 15,
             img,
         });
     }
@@ -564,12 +550,12 @@ export class EndingScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#f5f0eb');
 
         // Generate smooth textures for flowers/leaves
-        const ps = PARAMS.PIXEL_SIZE;
-        this.genTexSmooth('__fc_flower1', SPRITE_FLOWER, ps);
-        this.genTexSmooth('__fc_flower2', SPRITE_FLOWER_2, ps);
-        this.genTexSmooth('__fc_leaf', SPRITE_LEAF, ps);
-        this.genTexSmooth('__fc_petal_f', SPRITE_PETAL, ps);
-        this.genTexSmooth('__fc_petal_l', SPRITE_LEAF, ps);
+        const baseSize = 5;
+        this.genTexSmooth('__fc_flower1', SPRITE_FLOWER, baseSize);
+        this.genTexSmooth('__fc_flower2', SPRITE_FLOWER_2, baseSize);
+        this.genTexSmooth('__fc_leaf', SPRITE_LEAF, baseSize);
+        this.genTexSmooth('__fc_petal_f', SPRITE_PETAL, baseSize);
+        this.genTexSmooth('__fc_petal_l', SPRITE_LEAF, baseSize);
 
         // Canvas for pixel-line ropes
         this.canvas = this.add.graphics().setDepth(5);
@@ -618,14 +604,14 @@ export class EndingScene extends Phaser.Scene {
             let texKey = '';
             let spriteSize = 0;
 
-            if (rand > 0.65) {
+            if (rand > 0.45) {
                 decorator = 'flower';
                 if (Math.random() > 0.5) { texKey = '__fc_flower1'; } else { texKey = '__fc_flower2'; }
-                spriteSize = PARAMS.PIXEL_SIZE * PARAMS.SPRITE_SCALE * 5;
-            } else if (rand > 0.35) {
+                spriteSize = 15;
+            } else if (rand > 0.15) {
                 decorator = 'leaf';
                 texKey = '__fc_leaf';
-                spriteSize = PARAMS.PIXEL_SIZE * PARAMS.SPRITE_SCALE * 5;
+                spriteSize = 15;
             }
 
             const node: VNode = {
@@ -636,89 +622,196 @@ export class EndingScene extends Phaser.Scene {
             };
 
             if (texKey) {
-                node.img = this.add.image(x, y, texKey).setOrigin(0.5).setDepth(6).setScale(0.5);
+                node.img = this.add.image(x, y, texKey).setOrigin(0.5).setDepth(6).setScale(0.25);
             }
             nodes.push(node);
         }
         return { nodes, spacing };
     }
 
-    private genTexSmooth(key: string, sprite: string[], pixelSize: number) {
-        if (this.textures.exists(key)) this.textures.remove(key);
-        const scale = PARAMS.SPRITE_SCALE;
-        const rows = sprite.length;
-        const cols = sprite[0].length;
-        const rw = cols * pixelSize * scale;
-        const rh = rows * pixelSize * scale;
+    private genTexSmooth(key: string, _sprite: string[], _pixelSize: number) {
+        if (this.textures.exists(key)) return;
+        const size = 64;
         const canvas = document.createElement('canvas');
-        canvas.width = rw;
-        canvas.height = rh;
+        canvas.width = size;
+        canvas.height = size;
         const ctx = canvas.getContext('2d')!;
+        ctx.clearRect(0, 0, size, size);
 
-        // Draw pixel data at high res with soft circles instead of hard squares
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const ch = sprite[r][c];
-                if (ch === '0') continue;
-                const hex = PALETTE[ch];
-                if (!hex) continue;
-                const rr = (hex >> 16) & 0xff;
-                const gg = (hex >> 8) & 0xff;
-                const bb = hex & 0xff;
+        const cx = size / 2, cy = size / 2;
 
-                const cx = (c + 0.5) * pixelSize * scale;
-                const cy = (r + 0.5) * pixelSize * scale;
-                const radius = pixelSize * scale * 0.55;
-
-                // Soft glow
-                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.3);
-                grad.addColorStop(0, `rgba(${rr},${gg},${bb},0.95)`);
-                grad.addColorStop(0.6, `rgba(${rr},${gg},${bb},0.7)`);
-                grad.addColorStop(1, `rgba(${rr},${gg},${bb},0)`);
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(cx, cy, radius * 1.3, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Core
-                ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
-                ctx.beginPath();
-                ctx.arc(cx, cy, radius * 0.75, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        if (key.includes('flower1')) {
+            this.drawRealisticFlower(ctx, cx, cy, size, 0xffb7c5, 0xe8789a, 0xffd4e8, 0x7ec850, false);
+        } else if (key.includes('flower2')) {
+            this.drawRealisticFlower(ctx, cx, cy, size, 0xff6b8a, 0xff6b8a, 0xffda6b, 0x7ec850, true);
+        } else if (key.includes('petal_f')) {
+            this.drawRealisticPetal(ctx, cx, cy, size, 0xffb7c5, 0xe8789a);
+        } else if (key.includes('petal_l') || key.includes('leaf')) {
+            this.drawRealisticLeaf(ctx, cx, cy, size, 0x7ec850, 0x4a8c2a);
         }
-
-        // Slight gaussian blur for softness — re-draw smoothed
-        const imgData = ctx.getImageData(0, 0, rw, rh);
-        const blurred = this.simpleBlur(imgData, 1);
-        ctx.putImageData(blurred, 0, 0);
 
         this.textures.addCanvas(key, canvas);
     }
 
-    private simpleBlur(imgData: ImageData, radius: number): ImageData {
-        const w = imgData.width, h = imgData.height;
-        const src = imgData.data;
-        const out = new Uint8ClampedArray(src.length);
-        const size = (radius * 2 + 1) ** 2;
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                let r = 0, g = 0, b = 0, a = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                    for (let dx = -radius; dx <= radius; dx++) {
-                        const sx = Math.min(w - 1, Math.max(0, x + dx));
-                        const sy = Math.min(h - 1, Math.max(0, y + dy));
-                        const i = (sy * w + sx) * 4;
-                        r += src[i]; g += src[i + 1]; b += src[i + 2]; a += src[i + 3];
-                    }
-                }
-                const i = (y * w + x) * 4;
-                out[i] = r / size; out[i + 1] = g / size;
-                out[i + 2] = b / size; out[i + 3] = a / size;
-            }
+    private drawRealisticFlower(
+        ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number,
+        petalColor: number, petalDark: number, centerColor: number,
+        _stemColor: number, isWarm: boolean,
+    ) {
+        const petalCount = 5;
+        const petalRadius = size * 0.32;
+        const centerRadius = size * 0.12;
+
+        // Draw petals
+        for (let i = 0; i < petalCount; i++) {
+            const angle = (Math.PI * 2 / petalCount) * i - Math.PI / 2;
+            const px = cx + Math.cos(angle) * size * 0.14;
+            const py = cy + Math.sin(angle) * size * 0.14;
+
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(angle + Math.PI / 2);
+
+            // Petal shape using bezier curves
+            const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, petalRadius);
+            const r1 = (petalColor >> 16) & 0xff, g1 = (petalColor >> 8) & 0xff, b1 = petalColor & 0xff;
+            const r2 = (petalDark >> 16) & 0xff, g2 = (petalDark >> 8) & 0xff, b2 = petalDark & 0xff;
+            grad.addColorStop(0, `rgba(${r1},${g1},${b1},0.95)`);
+            grad.addColorStop(0.6, `rgba(${r1},${g1},${b1},0.9)`);
+            grad.addColorStop(1, `rgba(${r2},${g2},${b2},0.3)`);
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.moveTo(0, -size * 0.02);
+            ctx.bezierCurveTo(
+                petalRadius * 0.5, -petalRadius * 0.5,
+                petalRadius * 0.6, -petalRadius * 0.9,
+                0, -petalRadius
+            );
+            ctx.bezierCurveTo(
+                -petalRadius * 0.6, -petalRadius * 0.9,
+                -petalRadius * 0.5, -petalRadius * 0.5,
+                0, -size * 0.02
+            );
+            ctx.fill();
+
+            // Subtle vein line
+            ctx.strokeStyle = `rgba(${r2},${g2},${b2},0.3)`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0, -size * 0.04);
+            ctx.lineTo(0, -petalRadius * 0.8);
+            ctx.stroke();
+
+            ctx.restore();
         }
-        return new ImageData(out, w, h);
+
+        // Flower center
+        const cr = (centerColor >> 16) & 0xff, cg = (centerColor >> 8) & 0xff, cb = centerColor & 0xff;
+        const cGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, centerRadius);
+        cGrad.addColorStop(0, `rgba(${cr},${cg},${cb},1)`);
+        cGrad.addColorStop(0.7, `rgba(${cr},${cg},${cb},0.9)`);
+        cGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0.5)`);
+        ctx.fillStyle = cGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, centerRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Tiny stamens dots
+        for (let i = 0; i < 6; i++) {
+            const a = (Math.PI * 2 / 6) * i;
+            const dx = Math.cos(a) * centerRadius * 0.55;
+            const dy = Math.sin(a) * centerRadius * 0.55;
+            ctx.fillStyle = isWarm ? 'rgba(255,180,80,0.7)' : 'rgba(255,220,120,0.7)';
+            ctx.beginPath();
+            ctx.arc(cx + dx, cy + dy, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
+
+    private drawRealisticLeaf(
+        ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number,
+        color: number, darkColor: number,
+    ) {
+        const r1 = (color >> 16) & 0xff, g1 = (color >> 8) & 0xff, b1 = color & 0xff;
+        const r2 = (darkColor >> 16) & 0xff, g2 = (darkColor >> 8) & 0xff, b2 = darkColor & 0xff;
+
+        const leafW = size * 0.2;
+        const leafH = size * 0.42;
+
+        // Main leaf body
+        const grad = ctx.createLinearGradient(cx, cy - leafH, cx, cy + leafH);
+        grad.addColorStop(0, `rgba(${r1},${g1},${b1},0.95)`);
+        grad.addColorStop(0.5, `rgba(${r2},${g2},${b2},0.9)`);
+        grad.addColorStop(1, `rgba(${r1},${g1},${b1},0.85)`);
+        ctx.fillStyle = grad;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - leafH);
+        ctx.bezierCurveTo(cx + leafW * 1.2, cy - leafH * 0.5, cx + leafW * 1.0, cy + leafH * 0.3, cx, cy + leafH);
+        ctx.bezierCurveTo(cx - leafW * 1.0, cy + leafH * 0.3, cx - leafW * 1.2, cy - leafH * 0.5, cx, cy - leafH);
+        ctx.fill();
+
+        // Center vein
+        ctx.strokeStyle = `rgba(${r2},${g2},${b2},0.5)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - leafH * 0.9);
+        ctx.lineTo(cx, cy + leafH * 0.9);
+        ctx.stroke();
+
+        // Side veins
+        for (let i = 0; i < 3; i++) {
+            const t = 0.2 + i * 0.25;
+            const vy = cy - leafH + leafH * 2 * t;
+            const vw = leafW * 0.6 * (1 - Math.abs(t - 0.5) * 1.5);
+            ctx.strokeStyle = `rgba(${r2},${g2},${b2},0.3)`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(cx, vy);
+            ctx.lineTo(cx + vw, vy - leafH * 0.12);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx, vy);
+            ctx.lineTo(cx - vw, vy - leafH * 0.12);
+            ctx.stroke();
+        }
+
+        // Subtle highlight
+        const hlGrad = ctx.createRadialGradient(cx - leafW * 0.3, cy - leafH * 0.2, 0, cx, cy, leafH * 0.6);
+        hlGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
+        hlGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hlGrad;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - leafH);
+        ctx.bezierCurveTo(cx + leafW * 1.2, cy - leafH * 0.5, cx + leafW * 1.0, cy + leafH * 0.3, cx, cy + leafH);
+        ctx.bezierCurveTo(cx - leafW * 1.0, cy + leafH * 0.3, cx - leafW * 1.2, cy - leafH * 0.5, cx, cy - leafH);
+        ctx.fill();
+    }
+
+    private drawRealisticPetal(
+        ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number,
+        color: number, darkColor: number,
+    ) {
+        const r1 = (color >> 16) & 0xff, g1 = (color >> 8) & 0xff, b1 = color & 0xff;
+        const r2 = (darkColor >> 16) & 0xff, g2 = (darkColor >> 8) & 0xff, b2 = darkColor & 0xff;
+
+        const pw = size * 0.22;
+        const ph = size * 0.35;
+
+        const grad = ctx.createRadialGradient(cx, cy - ph * 0.3, 0, cx, cy, ph);
+        grad.addColorStop(0, `rgba(${r1},${g1},${b1},0.95)`);
+        grad.addColorStop(0.7, `rgba(${r1},${g1},${b1},0.85)`);
+        grad.addColorStop(1, `rgba(${r2},${g2},${b2},0.4)`);
+        ctx.fillStyle = grad;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - ph);
+        ctx.bezierCurveTo(cx + pw, cy - ph * 0.4, cx + pw * 0.8, cy + ph * 0.5, cx, cy + ph * 0.7);
+        ctx.bezierCurveTo(cx - pw * 0.8, cy + ph * 0.5, cx - pw, cy - ph * 0.4, cx, cy - ph);
+        ctx.fill();
+    }
+
 
     private triggerGather() {
         if (this.butterflies[0].active) return;
@@ -891,36 +984,23 @@ export class EndingScene extends Phaser.Scene {
     private drawPixelRopes() {
         const g = this.canvas;
         g.clear();
-        g.fillStyle(0xc8dcff, 0.5);
-        const ps = PARAMS.PIXEL_SIZE;
+
+        g.lineStyle(PARAMS.ROPE_WIDTH, 0xc8dcff, 0.7);
         for (const rope of this.ropes) {
             const nodes = rope.nodes;
-            for (let i = 0; i < nodes.length - 1; i++) {
-                this.drawPixelLine(g, ps, nodes[i].x, nodes[i].y, nodes[i + 1].x, nodes[i + 1].y);
+            g.beginPath();
+            g.moveTo(nodes[0].x, nodes[0].y);
+            for (let i = 1; i < nodes.length; i++) {
+                g.lineTo(nodes[i].x, nodes[i].y);
             }
-        }
-    }
-
-    private drawPixelLine(g: Phaser.GameObjects.Graphics, ps: number, x1: number, y1: number, x2: number, y2: number) {
-        const dx = Math.abs(x2 - x1);
-        const dy = Math.abs(y2 - y1);
-        const sx = x1 < x2 ? ps : -ps;
-        const sy = y1 < y2 ? ps : -ps;
-        let err = dx - dy;
-        let cx = x1, cy = y1;
-        for (let safety = 0; safety < 2000; safety++) {
-            g.fillRect(cx, cy, ps, ps);
-            if (Math.abs(cx - x2) < ps && Math.abs(cy - y2) < ps) break;
-            const e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; cx += sx; }
-            if (e2 < dx) { err += dx; cy += sy; }
+            g.stroke();
         }
     }
 
     private spawnPetal(x: number, y: number, type: 'flower' | 'leaf') {
         const texKey = type === 'flower' ? '__fc_petal_f' : '__fc_petal_l';
         const img = this.add.image(x, y, texKey).setOrigin(0.5).setDepth(15)
-            .setScale(0.5);
+            .setScale(0.25);
         this.petals.push({
             x, y,
             vx: (Math.random() - 0.5) * 1.5,
@@ -929,7 +1009,7 @@ export class EndingScene extends Phaser.Scene {
             rotSpeed: (Math.random() - 0.5) * 0.06,
             life: 1,
             swayPhase: Math.random() * Math.PI * 2,
-            size: PARAMS.PIXEL_SIZE * 5,
+            size: 15,
             img,
         });
     }

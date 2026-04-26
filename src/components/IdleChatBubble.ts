@@ -134,6 +134,41 @@ export class IdleChatBubble {
         }, CHAT_DURATION);
     }
 
+    forceShowText(target: Phaser.GameObjects.Sprite, text: string) {
+        if (this._active) return;
+
+        this.followTarget = target;
+        this.textEl.textContent = text;
+
+        this.bubbleEl.style.borderRadius = '8px';
+        this.tailEl.style.cssText = `
+            position:absolute;width:0;height:0;bottom:-6px;left:50%;
+            transform:translateX(-50%);
+            border-left:6px solid transparent;
+            border-right:6px solid transparent;
+            border-top:6px solid rgba(255,255,255,0.95);
+        `;
+
+        this.el.style.display = 'block';
+        this.positionAt(target);
+
+        void this.el.offsetWidth;
+        this.el.style.opacity = '1';
+        this._active = true;
+
+        if (this.fadeTimer !== null) clearTimeout(this.fadeTimer);
+        this.fadeTimer = window.setTimeout(() => {
+            this.el.style.opacity = '0';
+            setTimeout(() => {
+                this.el.style.display = 'none';
+                this._active = false;
+                this.followTarget = null;
+                this.lastChatTime = this.scene.time.now;
+                this.fadeTimer = null;
+            }, 300);
+        }, CHAT_DURATION);
+    }
+
     resetUsed() {
         this.usedIndices.clear();
     }

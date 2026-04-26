@@ -28,6 +28,8 @@ export class CityNightScene extends Phaser.Scene {
     private restPopupActive = false;
     private npcWaitingOffscreen = false;
     private isSomeoneWaiting = false;
+    private npcTooFastBubbleShown = false;
+    private npcOffscreenBubbleShown = false;
 
     private idleChat!: IdleChatBubble;
     private emoteBubble!: EmoteBubble;
@@ -99,6 +101,16 @@ export class CityNightScene extends Phaser.Scene {
             this.paceSync.update(this.player.getX(), this.npc.getX());
         }
 
+        // 3.55 NPC bubble when player too fast
+        if (this.npc.getIsPaused() && !this.npcWaitingOffscreen && !this.isSomeoneWaiting) {
+            if (!this.npcTooFastBubbleShown) {
+                this.idleChat.forceShowText(this.npc.sprite, '等等我，别走太快');
+                this.npcTooFastBubbleShown = true;
+            }
+        } else {
+            this.npcTooFastBubbleShown = false;
+        }
+
         // 3.6 Snow + freeze check
         this.snow.update();
         if (!this.isFrozen && this.tempBar.getValue() <= 0) {
@@ -132,12 +144,17 @@ export class CityNightScene extends Phaser.Scene {
         const camRight = this.cameras.main.scrollX + CONSTANTS.SCREEN_WIDTH;
         const npcX = this.npc.getX();
 
-        if (npcX > camRight) {
+        if (npcX > camRight - 30) {
             this.npc.stopWalkLowHead();
             this.npcWaitingOffscreen = true;
+            if (!this.npcOffscreenBubbleShown) {
+                this.idleChat.forceShowText(this.npc.sprite, '走快点！');
+                this.npcOffscreenBubbleShown = true;
+            }
         } else if (this.npcWaitingOffscreen && npcX <= camRight - 60) {
             this.npc.resumeWalk();
             this.npcWaitingOffscreen = false;
+            this.npcOffscreenBubbleShown = false;
         }
     }
 
