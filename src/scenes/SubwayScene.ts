@@ -4,7 +4,6 @@ import { DIALOGUES } from '../config/dialogues';
 import { VignetteEffect } from '../components/VignetteEffect';
 import { SnowEffect } from '../components/SnowEffect';
 import { StepSoundGenerator } from '../components/StepSoundGenerator';
-import { playWhisper } from '../components/SoundGenerators';
 import { EmoteBubble } from '../components/EmoteBubble';
 
 export class SubwayScene extends Phaser.Scene {
